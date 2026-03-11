@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Jupyter Hub state
+jupyterhub_cookie_secret
+jupyterhub.sqlite
+jupyterhub-proxy.pid
+
+# Kerberos keytabs and credential caches — never commit these
+*.keytab
+*.ccache
+/config/kerberos/*.keytab
+/config/kerberos/*.ccache
+
+# Secrets and local overrides
+*.env
+.env.*
+secrets/
+
+# Livy runtime
+/config/livy/*.pid
+
+# Docker build cache artefacts
+docker/*/target/
+
+# kind kubeconfig (auto-generated)
+kubeconfig-*.yaml
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# VS Code
+.vscode/

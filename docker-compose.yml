@@ -1,0 +1,97 @@
+# Phase 1: Core chain — SparkMagic → Livy → Spark standalone
+# No authentication. Single Jupyter user.
+#
+# Services:
+#   spark-master   Spark standalone master
+#   spark-worker   One Spark worker (scale up with --scale spark-worker=N)
+#   livy           Apache Livy REST server (talks to Spark standalone)
+#   jupyter        Single Jupyter Lab instance with SparkMagic pre-installed
+#
+# Usage:
+#   docker compose up --build
+#   Open http://localhost:8888 (token: sparkmagic)
+#   Open http://localhost:8080 for Spark UI
+#   Open http://localhost:8998 for Livy REST API
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Spark standalone cluster
+  # ---------------------------------------------------------------------------
+  spark-master:
+    image: apache/spark:3.5.3
+    container_name: spark-master
+    entrypoint: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master"]
+    environment:
+      SPARK_NO_DAEMONIZE: "true"
+    ports:
+      - "8080:8080"   # Spark Master Web UI
+      - "7077:7077"   # Spark Master RPC
+    networks:
+      - spark-net
+
+  spark-worker:
+    image: apache/spark:3.5.3
+    container_name: spark-worker
+    entrypoint: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
+    environment:
+      SPARK_NO_DAEMONIZE: "true"
+      SPARK_WORKER_MEMORY: "2G"
+      SPARK_WORKER_CORES: "2"
+    depends_on:
+      - spark-master
+    networks:
+      - spark-net
+
+  # ---------------------------------------------------------------------------
+  # Apache Livy REST server
+  # ---------------------------------------------------------------------------
+  livy:
+    build:
+      context: ./docker/livy
+      dockerfile: Dockerfile
+    container_name: livy
+    environment:
+      - SPARK_HOME=/opt/spark
+      - SPARK_MASTER=spark://spark-master:7077
+    volumes:
+      - ./config/livy/livy.conf:/opt/livy/conf/livy.conf:ro
+      - ./config/livy/livy-env.sh:/opt/livy/conf/livy-env.sh:ro
+    ports:
+      - "8998:8998"   # Livy REST API
+    depends_on:
+      - spark-master
+    networks:
+      - spark-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8998/sessions"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Jupyter Lab (single user) with SparkMagic
+  # ---------------------------------------------------------------------------
+  jupyter:
+    build:
+      context: ./docker/jupyter
+      dockerfile: Dockerfile
+    container_name: jupyter
+    environment:
+      - JUPYTER_TOKEN=sparkmagic
+      - JUPYTER_ENABLE_LAB=yes
+    volumes:
+      - ./config/sparkmagic/config.json:/home/jovyan/.sparkmagic/config.json:ro
+      - ./notebooks:/home/jovyan/work/notebooks
+    ports:
+      - "8888:8888"
+    depends_on:
+      livy:
+        condition: service_healthy
+    networks:
+      - spark-net
+
+networks:
+  spark-net:
+    driver: bridge
