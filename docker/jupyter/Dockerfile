@@ -22,7 +22,8 @@ RUN pip install --no-cache-dir sparkmagic==0.23.0 && \
 RUN mkdir -p \
         /home/jovyan/.sparkmagic \
         /home/jovyan/.local/share/jupyter/runtime \
-        /home/jovyan/.local/share/jupyter/kernels && \
-    chown -R jovyan:users /home/jovyan/.sparkmagic /home/jovyan/.local
+        /home/jovyan/.local/share/jupyter/kernels \
+        /home/jovyan/.ipython && \
+    chown -R jovyan:users /home/jovyan/.sparkmagic /home/jovyan/.local /home/jovyan/.ipython
 
 USER jovyan

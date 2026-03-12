@@ -1,17 +1,18 @@
-# Phase 1: Core chain — SparkMagic → Livy → Spark standalone
-# No authentication. Single Jupyter user.
+# Phase 2: JupyterHub + DockerSpawner → SparkMagic → Livy → Spark standalone
+# DummyAuthenticator (any user / password "sparkmagic") — dev only.
 #
 # Services:
 #   spark-master   Spark standalone master
 #   spark-worker   One Spark worker (scale up with --scale spark-worker=N)
 #   livy           Apache Livy REST server (talks to Spark standalone)
-#   jupyter        Single Jupyter Lab instance with SparkMagic pre-installed
+#   jupyterhub     JupyterHub — spawns per-user singleuser containers
+#   singleuser     (build-only) per-user JupyterLab image with SparkMagic
 #
 # Usage:
 #   docker compose up --build
-#   Open http://localhost:8888 (token: sparkmagic)
-#   Open http://localhost:8080 for Spark UI
-#   Open http://localhost:8998 for Livy REST API
+#   Open http://localhost:8000  (JupyterHub — login: alice / sparkmagic)
+#   Open http://localhost:8080  (Spark Master Web UI)
+#   Open http://localhost:8998  (Livy REST API)
 
 services:
 
@@ -33,7 +34,9 @@ services:
   spark-worker:
     image: apache/spark:3.5.3
     container_name: spark-worker
-    entrypoint: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
+    # apache/spark:3.5.3 has python3 but not "python"; PySpark executor needs "python"
+    user: root
+    entrypoint: ["/bin/bash", "-c", "ln -sf /usr/bin/python3 /usr/bin/python && exec /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077"]
     environment:
       SPARK_NO_DAEMONIZE: "true"
       SPARK_WORKER_MEMORY: "2G"
@@ -71,26 +74,55 @@ services:
       start_period: 30s
 
   # ---------------------------------------------------------------------------
-  # Jupyter Lab (single user) with SparkMagic
+  # JupyterHub  (Phase 2)
+  # Spawns per-user singleuser containers via the Docker socket.
   # ---------------------------------------------------------------------------
-  jupyter:
+  jupyterhub:
     build:
-      context: ./docker/jupyter
+      context: ./docker/jupyterhub
       dockerfile: Dockerfile
-    container_name: jupyter
+    container_name: jupyterhub
     environment:
-      - JUPYTER_TOKEN=sparkmagic
-      - JUPYTER_ENABLE_LAB=yes
+      # Absolute path to the repo root ON THE DOCKER HOST.
+      # DockerSpawner calls the Docker daemon on the HOST to create singleuser
+      # containers, so bind-mount paths must be valid on the HOST, not inside
+      # the hub container.
+      # Set in the .env file at the repo root (auto-generated, not committed):
+      #   REPO_ROOT=C:/Users/you/work/learn-jupyterhub-with-livy
+      REPO_ROOT: ${REPO_ROOT}
     volumes:
-      - ./config/sparkmagic/config.json:/home/jovyan/.sparkmagic/config.json:ro
-      - ./notebooks:/home/jovyan/work/notebooks
+      - ./config/jupyterhub/jupyterhub_config.py:/srv/jupyterhub/jupyterhub_config.py:ro
+      # Docker socket — lets DockerSpawner create/remove singleuser containers
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Persist hub DB and cookie secret across restarts
+      - jupyterhub-data:/srv/jupyterhub
     ports:
-      - "8888:8888"
+      - "8000:8000"   # JupyterHub web UI
     depends_on:
       livy:
         condition: service_healthy
     networks:
       - spark-net
+    command: ["jupyterhub", "-f", "/srv/jupyterhub/jupyterhub_config.py"]
+
+  # ---------------------------------------------------------------------------
+  # Singleuser image (build target only — not a running service)
+  # DockerSpawner pulls this image to create per-user containers.
+  # Build context is the repo root so the Dockerfile can COPY from
+  # config/sparkmagic/ and notebooks/ into the image.
+  # ---------------------------------------------------------------------------
+  singleuser:
+    build:
+      context: .
+      dockerfile: docker/singleuser/Dockerfile
+    image: learn-jupyterhub-with-livy-singleuser:latest
+    # Prevent compose from starting a container for this service;
+    # it exists only so `docker compose build` builds the image.
+    profiles:
+      - build-only
+
+volumes:
+  jupyterhub-data:   # persists hub DB + cookie secret across docker compose down/up
 
 networks:
   spark-net:
