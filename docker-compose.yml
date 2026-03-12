@@ -33,7 +33,7 @@ services:
 
   spark-worker:
     image: apache/spark:3.5.3
-    container_name: spark-worker
+    # container_name: spark-worker
     # apache/spark:3.5.3 has python3 but not "python"; PySpark executor needs "python"
     user: root
     entrypoint: ["/bin/bash", "-c", "ln -sf /usr/bin/python3 /usr/bin/python && exec /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077"]
