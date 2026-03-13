@@ -418,23 +418,140 @@ spark-worker (executor)
 
 ---
 
+## Phase 4 validation checklist
+
+Phase 4 moves JupyterHub out of Docker Compose and into Kubernetes (kind).
+The Compose stack becomes a pure **data plane** — Spark, Livy, HMS, Postgres unchanged.
+KubeSpawner replaces DockerSpawner: per-user **Pods** instead of containers.
+
+```
+Browser :8001
+  └─► JupyterHub Pod  (kind K8s cluster)
+        └─► singleuser Pod  (KubeSpawner)
+              └─► SparkMagic → http://host.docker.internal:8998
+                    └─► Livy  (Docker Compose)
+                          └─► spark-worker  (Docker Compose)
+```
+
+### Prerequisites (install once)
+
+The tools below must be on your `PATH` before running `phase4-up.ps1`.
+All three are available via `winget` on Windows.
+
+```powershell
+# Kubernetes-in-Docker — creates local K8s clusters as Docker containers
+winget install Kubernetes.kind
+
+# Helm — K8s package manager used to deploy Zero-to-JupyterHub
+winget install Helm.Helm
+
+# kubectl — K8s CLI for inspecting Pods, ConfigMaps, logs
+winget install Kubernetes.kubectl
+```
+
+Verify after install (restart your terminal first):
+
+```powershell
+kind    version   # kind v0.27.x or later
+helm    version   # v3.x
+kubectl version --client
+```
+
+Docker Desktop must also be running — kind creates its cluster nodes as Docker containers.
+
+> **Alternative package managers**
+> - [Chocolatey](https://chocolatey.org/): `choco install kind kubernetes-helm kubernetes-cli`
+> - [Scoop](https://scoop.sh/): `scoop install kind helm kubectl`
+> - macOS/Linux: `brew install kind helm kubectl`
+
+### 1. Start the Compose data plane
+
+```powershell
+docker compose up --build -d
+docker compose ps   # wait until all services are healthy
+```
+
+### 2. Bootstrap kind + JupyterHub
+
+```powershell
+.\scripts\phase4-up.ps1
+```
+
+Idempotent — safe to re-run. Does:
+1. `kind create cluster` (NodePort 30000 → `localhost:8001`)
+2. `docker build` singleuser image + `kind load docker-image` (no registry needed)
+3. `helm upgrade --install` Zero-to-JupyterHub chart
+4. `kubectl apply` ConfigMaps for SparkMagic config and shared notebooks
+
+Watch the hub Pod start:
+```powershell
+kubectl get pods -n jhub -w   # wait for hub-* to reach 1/1 Running (~2 min)
+```
+
+### 3. Validate
+
+```
+http://localhost:8001    login: alice / sparkmagic
+```
+
+Open **`shared-notebooks/03_validate_hive_metastore.ipynb`** (same notebook as Phase 3),
+select the **PySpark** kernel, run all cells.
+
+| Check | Pass condition |
+|---|---|
+| `%%info` | Session `idle`; Livy URL = `http://host.docker.internal:8998` |
+| `catalogImplementation` | `hive` |
+| `%%sql SHOW TABLES IN risk_dw` | `trades` table visible (Phase 3 data persists) |
+| `%%sql SELECT COUNT(*) FROM risk_dw.trades` | `10000` |
+
+### 4. Verify Pod lifecycle
+
+```powershell
+# While notebook is open — one hub Pod + one user Pod
+kubectl get pods -n jhub
+
+# After Hub → Stop My Server — user Pod is gone within ~30 s
+kubectl get pods -n jhub
+```
+
+### 5. Confirm Livy traffic from kind
+
+```powershell
+docker logs livy --tail 20   # look for POST /sessions and POST /sessions/0/statements
+```
+
+### Teardown
+
+```powershell
+.\scripts\phase4-down.ps1   # delete kind cluster
+docker compose down          # stop data plane  (add -v to wipe volumes)
+```
+
+### Production equivalence
+
+| This stack | Production |
+|---|---|
+| `kind` single-node | EKS / GKE / AKS |
+| `host.docker.internal:8998` | Livy service hostname / LB |
+| ConfigMap for SparkMagic config | Helm values / K8s Secret |
+| `image_pull_policy: Never` | Registry image + `imagePullSecrets` |
+| No TLS | Ingress with TLS termination (Phase 5) |
+
+---
+
 ## Preventing resource contention (many engineers in parallel)
 
 Moving the driver from the jumpbox to Livy eliminates per-user driver RAM piling up on the
 jumpbox, but engineers can still compete for the same executor slots. These are the levers:
 
-### Per-user container limits (already in this stack)
+### Per-user Pod limits (KubeSpawner)
 
-Each JupyterLab container is capped at spawn time:
+Each JupyterLab Pod is capped via `config/jupyterhub/helm-values.yaml`:
 
 ```python
-# config/jupyterhub/jupyterhub_config.py
-c.DockerSpawner.mem_limit = "2G"
-c.DockerSpawner.cpu_limit = 2
+c.KubeSpawner.cpu_limit = 2
+c.KubeSpawner.mem_limit = "2G"
 ```
-
-This prevents one user hogging the singleuser container -- but the user can still request
-unlimited Spark executors.
 
 ### Per-session executor limits (SparkMagic config)
 
@@ -486,8 +603,8 @@ Map Livy sessions to a queue in `config/sparkmagic/config.json`:
 
 | Lever | Scope | Where configured |
 |---|---|---|
-| `DockerSpawner.mem_limit` / `cpu_limit` | Per-user JupyterLab container | `jupyterhub_config.py` |
-| `numExecutors` / `executorMemory` | Per Spark session | `config.json` |
+| `KubeSpawner.mem_limit` / `cpu_limit` | Per-user Pod | `helm-values.yaml` |
+| `numExecutors` / `executorMemory` | Per Spark session | `config-k8s.json` |
 | `livy.server.session.max-creation` | Total concurrent sessions on edge node | `livy.conf` |
 | YARN queue capacity | Team-level cluster share | `capacity-scheduler.xml` on cluster |
 
@@ -496,19 +613,23 @@ Map Livy sessions to a queue in `config/sparkmagic/config.json`:
 ## Quick start
 
 ```powershell
-copy .env.example .env   # edit REPO_ROOT to this folder's absolute path
-docker compose up --build
+# Data plane (Spark / Livy / HMS)
+docker compose up --build -d
+
+# JupyterHub on K8s (Phase 4)
+.\scripts\phase4-up.ps1
 ```
 
 | URL | What |
 |---|---|
-| http://localhost:8000 | JupyterHub -- login: `alice` / `bob` / `data-engineer`, password: `sparkmagic` |
+| http://localhost:8001 | JupyterHub (KubeSpawner) — `alice` / `bob` / `data-engineer`, password: `sparkmagic` |
 | http://localhost:8080 | Spark Master UI |
 | http://localhost:8998/sessions | Livy REST API |
 
 ```powershell
-docker compose down                      # stop (volumes kept)
-docker compose down -v                   # stop + wipe volumes
+.\scripts\phase4-down.ps1              # remove kind cluster
+docker compose down                    # stop data plane (volumes kept)
+docker compose down -v                 # stop + wipe volumes
 docker compose up --scale spark-worker=3 # scale workers
 ```
 
@@ -529,18 +650,20 @@ graph LR
 
 ## Key config knobs
 
-**Who can log in** -- `config/jupyterhub/jupyterhub_config.py`
-```python
-c.Authenticator.allowed_users = {"alice", "bob", "data-engineer"}
-c.DummyAuthenticator.password = "sparkmagic"   # dev only; replace with PAM/LDAP in Phase 3
+**Who can log in** -- `config/jupyterhub/helm-values.yaml`
+```yaml
+DummyAuthenticator:
+  password: sparkmagic
+Authenticator:
+  allowed_users: [alice, bob, data-engineer]
 ```
 
-**Livy URL + session defaults** -- `config/sparkmagic/config.json`
+**Livy URL + session defaults** -- `config/sparkmagic/config-k8s.json`
 ```jsonc
-"url": "http://livy:8998",   // change to edge-node hostname in prod
-"auth": "None",               // Phase 3: "Kerberos"
+"url": "http://host.docker.internal:8998",  // K8s Pods reach Compose via host-gateway
+"auth": "None",                              // Phase 5: "Kerberos"
 "numExecutors": 1,
-"executorMemory": "1G"        // must be <= SPARK_WORKER_MEMORY
+"executorMemory": "1G"                       // must be <= SPARK_WORKER_MEMORY
 ```
 
 **Spark worker resources** -- `docker-compose.yml`
@@ -549,10 +672,16 @@ SPARK_WORKER_MEMORY: "2G"
 SPARK_WORKER_CORES: "2"
 ```
 
-**Per-user container limits** -- `jupyterhub_config.py`
+**Per-user Pod limits** -- `config/jupyterhub/helm-values.yaml` (`hub.extraConfig`)
 ```python
-c.DockerSpawner.mem_limit = "2G"
-c.DockerSpawner.cpu_limit = 2
+c.KubeSpawner.cpu_limit = 2
+c.KubeSpawner.mem_limit = "2G"
+```
+
+**ConfigMap refresh** (after editing `config-k8s.json` or `notebooks/`)
+```powershell
+.\scripts\apply-configmaps.ps1
+# then restart the user server in JupyterHub to pick up the new ConfigMap
 ```
 
 ---
@@ -574,7 +703,7 @@ To see all tags: `git tag`. To return to the latest: `git checkout master`.
 | 1 -- Core chain | done | `phase-1` | `spark-master`, `spark-worker`, `livy`, single `jupyter` |
 | 2 -- JupyterHub | done | `phase-2` | DockerSpawner; per-user containers + volumes |
 | 3 -- Hive Metastore | done | `phase-3` | `postgres` + `hive-metastore`; persistent SQL catalog; `%%sql SHOW TABLES` |
-| 4 -- kind + KubeSpawner | planned | | K8s-in-Docker; Zero-to-JupyterHub Helm chart |
+| 4 -- kind + KubeSpawner | in progress | | K8s-in-Docker; Zero-to-JupyterHub Helm chart |
 | 5 -- Kerberos + SPNEGO | planned | | MIT KDC; SPNEGO on Livy + HMS; `kinit`-renewer sidecar |
 | 6 -- Production docs | planned | | Architecture doc; production checklist; YARN config |
 
@@ -601,7 +730,7 @@ To see all tags: `git tag`. To return to the latest: `git checkout master`.
 2. **`auth` in `config.json` is case-sensitive.** Exactly `"None"`, `"Basic_Access"`, or `"Kerberos"`.
 3. **Livy 0.9 -- do not set `auth.type = none`.** Leave it commented out entirely.
 4. **No `python` binary in `apache/spark` image.** Both Livy and spark-worker need `ln -s /usr/bin/python3 /usr/bin/python`.
-5. **DockerSpawner volume paths are HOST paths.** `REPO_ROOT` must be set in `.env` (copy `.env.example`).
+5. **singleuser image must be loaded into kind.** `phase4-up.ps1` does this automatically via `kind load docker-image`. If you rebuild the image, re-run the script.
 6. **Kerberos TGTs expire (~10h).** Long sessions need a `kinit -R` sidecar -- Phase 5.
 7. **Executor -> driver callbacks require network.** Livy must be on the Hadoop network; NodeManagers must have a TCP route back to the driver's IP:port -- the firewall rule ops teams most often forget.
 8. **Windows RDP jumpbox cookies are isolated by the OS.** Each engineer RDPs as their own AD account; cookies land in `C:\Users\<account>\AppData\...` under separate ACLs. The risk is a shared service account -- a Windows/AD problem, not a JupyterHub one.

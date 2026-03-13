@@ -1,0 +1,96 @@
+# Zero-to-JupyterHub Helm values — Phase 4
+# Reference: https://zero-to-jupyterhub.readthedocs.io/en/latest/resources/reference.html
+#
+# Deploy:
+#   helm repo add jupyterhub https://hub.jupyter.org/helm-chart/
+#   helm repo update
+#   helm upgrade --install jhub jupyterhub/jupyterhub \
+#       --namespace jhub --create-namespace \
+#       --values config/jupyterhub/helm-values.yaml
+#
+# Uninstall:
+#   helm uninstall jhub --namespace jhub
+
+# ---------------------------------------------------------------------------
+# Hub pod
+# ---------------------------------------------------------------------------
+hub:
+  config:
+    # DummyAuthenticator — dev only; replace with PAM/LDAP/OAuth in production.
+    JupyterHub:
+      authenticator_class: dummy
+    DummyAuthenticator:
+      password: sparkmagic
+    Authenticator:
+      allowed_users:
+        - alice
+        - bob
+        - data-engineer
+
+  # Extra Python config injected after the chart's own generated config.
+  # Used here to configure KubeSpawner volume mounts and resource limits.
+  extraConfig:
+    spawnerConfig: |
+      import os
+
+      # Singleuser image built by `docker compose build singleuser` and
+      # loaded into the kind cluster with:
+      #   kind load docker-image learn-jupyterhub-with-livy-singleuser:latest --name jhub
+      c.KubeSpawner.image = "learn-jupyterhub-with-livy-singleuser:latest"
+      # Never pull — image was loaded directly into kind, not pushed to a registry.
+      c.KubeSpawner.image_pull_policy = "Never"
+
+      # SparkMagic config injected as a ConfigMap volume (defined below).
+      # This overlays the baked-in image copy so live edits take effect on
+      # the next server start without an image rebuild.
+      c.KubeSpawner.volumes = [
+          {
+              "name": "sparkmagic-config",
+              "configMap": {"name": "sparkmagic-config"},
+          },
+          {
+              "name": "shared-notebooks",
+              "configMap": {"name": "shared-notebooks"},
+          },
+      ]
+      c.KubeSpawner.volume_mounts = [
+          {
+              "name": "sparkmagic-config",
+              "mountPath": "/home/jovyan/.sparkmagic/config.json",
+              "subPath": "config.json",
+              "readOnly": True,
+          },
+          {
+              "name": "shared-notebooks",
+              "mountPath": "/home/jovyan/shared-notebooks",
+              "readOnly": True,
+          },
+      ]
+
+      # Resource caps per user Pod (equivalent to DockerSpawner.mem_limit / cpu_limit).
+      c.KubeSpawner.cpu_limit = 2
+      c.KubeSpawner.mem_limit = "2G"
+      c.KubeSpawner.cpu_guarantee = 0.1
+      c.KubeSpawner.mem_guarantee = "256M"
+
+# ---------------------------------------------------------------------------
+# Proxy — exposes JupyterHub on NodePort 30000
+# (mapped to localhost:8001 by kind-config.yaml extraPortMappings)
+# ---------------------------------------------------------------------------
+proxy:
+  service:
+    type: NodePort
+    nodePorts:
+      http: 30000
+
+# ---------------------------------------------------------------------------
+# Singleuser pod defaults
+# (overridden above by KubeSpawner extraConfig where needed)
+# ---------------------------------------------------------------------------
+singleuser:
+  # Storage: disable the default PVC per user — use ConfigMap-based notebooks
+  # and in-pod home dir for dev. Enable PVCs in production.
+  storage:
+    type: none
+  # Default URL: open JupyterLab instead of classic Notebook tree.
+  defaultUrl: "/lab"

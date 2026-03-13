@@ -4,26 +4,29 @@
 # Phase strategy: this single file grows with each phase.
 # Each validated phase is captured as a git tag:
 #   git checkout phase-1   → Phase 1 stack
-#   git checkout phase-2   → Phase 2 stack (current)
-#   git checkout phase-3   → Phase 3 stack  (next)
+#   git checkout phase-2   → Phase 2 stack
+#   git checkout phase-3   → Phase 3 stack
+#   git checkout phase-4   → Phase 4 stack  (current)
 # To restore any snapshot:  git checkout phase-N && docker compose up --build
 #
-# Current phase: 3 — Hive Metastore
+# Current phase: 4 — KubeSpawner (kind + Helm)
+# This Compose stack is the DATA PLANE only (Spark / Livy / HMS).
+# JupyterHub now runs inside a kind K8s cluster — see scripts/phase4-up.ps1.
 #
-# Services (phase added in parentheses):
+# Services:
 #   spark-master      (1)  Spark standalone master
 #   spark-worker      (1)  Spark worker (scale: --scale spark-worker=N)
-#   livy              (1)  Apache Livy REST server
-#   jupyterhub        (2)  JupyterHub — spawns per-user singleuser containers
-#   singleuser        (2)  (build-only) per-user JupyterLab + SparkMagic
+#   livy              (1)  Apache Livy REST server  ← reachable from kind via host.docker.internal:8998
 #   hive-metastore    (3)  Hive Metastore Thrift server
 #   postgres          (3)  HMS backing store
+#   singleuser        (2)  (build-only) image loaded into kind by phase4-up.ps1
 #
 # Usage:
-#   docker compose up --build
-#   Open http://localhost:8000  (JupyterHub — login: alice / sparkmagic)
-#   Open http://localhost:8080  (Spark Master Web UI)
-#   Open http://localhost:8998  (Livy REST API)
+#   docker compose up --build -d        # start data plane
+#   .\scripts\phase4-up.ps1             # create kind cluster + Helm deploy JupyterHub
+#   Open http://localhost:8001          # JupyterHub (KubeSpawner) — alice / sparkmagic
+#   Open http://localhost:8080          # Spark Master Web UI
+#   Open http://localhost:8998/sessions # Livy REST API
 
 services:
 
@@ -97,38 +100,6 @@ services:
       start_period: 30s
 
   # ---------------------------------------------------------------------------
-  # JupyterHub  (Phase 2)
-  # Spawns per-user singleuser containers via the Docker socket.
-  # ---------------------------------------------------------------------------
-  jupyterhub:
-    build:
-      context: ./docker/jupyterhub
-      dockerfile: Dockerfile
-    container_name: jupyterhub
-    environment:
-      # Absolute path to the repo root ON THE DOCKER HOST.
-      # DockerSpawner calls the Docker daemon on the HOST to create singleuser
-      # containers, so bind-mount paths must be valid on the HOST, not inside
-      # the hub container.
-      # Set in the .env file at the repo root (auto-generated, not committed):
-      #   REPO_ROOT=C:/Users/you/work/learn-jupyterhub-with-livy
-      REPO_ROOT: ${REPO_ROOT}
-    volumes:
-      - ./config/jupyterhub/jupyterhub_config.py:/srv/jupyterhub/jupyterhub_config.py:ro
-      # Docker socket — lets DockerSpawner create/remove singleuser containers
-      - /var/run/docker.sock:/var/run/docker.sock
-      # Persist hub DB and cookie secret across restarts
-      - jupyterhub-data:/srv/jupyterhub
-    ports:
-      - "8000:8000"   # JupyterHub web UI
-    depends_on:
-      livy:
-        condition: service_healthy
-    networks:
-      - spark-net
-    command: ["jupyterhub", "-f", "/srv/jupyterhub/jupyterhub_config.py"]
-
-  # ---------------------------------------------------------------------------
   # Phase 3: Hive Metastore + PostgreSQL backing store
   # ---------------------------------------------------------------------------
   postgres:
@@ -174,26 +145,9 @@ services:
       retries: 10
       start_period: 60s
 
-  # ---------------------------------------------------------------------------
-  # Singleuser image (build target only — not a running service)
-  # DockerSpawner pulls this image to create per-user containers.
-  # Build context is the repo root so the Dockerfile can COPY from
-  # config/sparkmagic/ and notebooks/ into the image.
-  # ---------------------------------------------------------------------------
-  singleuser:
-    build:
-      context: .
-      dockerfile: docker/singleuser/Dockerfile
-    image: learn-jupyterhub-with-livy-singleuser:latest
-    # Prevent compose from starting a container for this service;
-    # it exists only so `docker compose build` builds the image.
-    profiles:
-      - build-only
-
 volumes:
-  jupyterhub-data:   # persists hub DB + cookie secret across docker compose down/up
   postgres-data:     # (phase 3) HMS PostgreSQL backing store
-  hive-warehouse:    # (phase 3) Parquet warehouse — shared between hive-metastore and spark-worker
+  hive-warehouse:    # (phase 3) Parquet warehouse — shared between hive-metastore, spark-worker, livy
 
 networks:
   spark-net:

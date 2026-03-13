@@ -1,0 +1,21 @@
+# kind cluster configuration for Phase 4
+# Creates a single-node cluster (1 control-plane that also acts as worker).
+# Ports 8000 and 8001 are forwarded to localhost so JupyterHub is reachable
+# from the host browser without an extra ingress controller.
+#
+# Usage:
+#   kind create cluster --name jhub --config kind-config.yaml
+#   kind delete cluster --name jhub
+
+apiVersion: kind.x-k8s.io/v1alpha4
+kind: Cluster
+
+nodes:
+  - role: control-plane
+    # Forward JupyterHub proxy (NodePort 30000) to localhost:8001.
+    # Port 8000 is already taken by the Compose jupyterhub service;
+    # using 8001 avoids a conflict when both stacks run simultaneously.
+    extraPortMappings:
+      - containerPort: 30000
+        hostPort: 8001
+        protocol: TCP
