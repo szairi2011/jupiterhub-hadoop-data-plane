@@ -169,6 +169,255 @@ Driver host = `livy`, executor host = `spark-worker`.
 
 ---
 
+## Phase 3 validation checklist
+
+### Objectives
+
+By the end of this phase you should be able to demonstrate:
+
+| # | Objective |
+|---|---|
+| 1 | Spark sessions use the **Hive catalog** (`hive`), not the default in-memory catalog |
+| 2 | Databases and tables can be created via `%%sql` and are stored persistently |
+| 3 | Data written to a Hive-managed table **survives a Livy session restart** |
+| 4 | A second user can query tables created by another user **without re-creating anything** |
+| 5 | Window functions and multi-table aggregations execute correctly on Hive-managed Parquet tables |
+
+### What Phase 3 adds
+
+| Service | Role |
+|---|---|
+| `postgres` | Stores HMS metadata (database/table/column/partition records) |
+| `hive-metastore` | Thrift server on `:9083`; Spark connects here to resolve table locations |
+| `hive-warehouse` volume | Shared Docker volume mounted in both `hive-metastore` and `spark-worker`; holds the actual Parquet files |
+
+Two keys are injected into every SparkMagic session via `config/sparkmagic/config.json`:
+
+```jsonc
+"conf": {
+  "spark.sql.catalogImplementation": "hive",
+  "spark.hadoop.hive.metastore.uris": "thrift://hive-metastore:9083"
+}
+```
+
+### 1. Log in and open the validation notebook
+
+```
+http://localhost:8000
+login: alice    password: sparkmagic
+```
+
+Open **`shared-notebooks/03_validate_hive_metastore.ipynb`**, select the **PySpark** kernel,
+then run all cells in order **through Step 4** before moving to the persistence test.
+
+### 2. Expected results per step
+
+| Step | Cell / action | Pass condition |
+|---|---|---|
+| 0 — Livy session | `%%info` | Returns a session ID with state `idle` |
+| 1 — Hive catalog | print `catalogImplementation` and `metastore.uris` | `hive` · `thrift://hive-metastore:9083` |
+| 2 — Create objects | `CREATE DATABASE` + `CREATE TABLE` + `DESCRIBE EXTENDED` | `SHOW DATABASES` lists `risk_dw`; table shows `Provider: hive`, `Type: MANAGED` |
+| 3 — Load data | `df.write.mode("overwrite").saveAsTable("risk_dw.trades")` | Prints `Loaded 10,000 rows into risk_dw.trades`; assert passes |
+| 4 — Analytics | Notional by trader · top-2 instruments · monthly flow | Each `%%sql` cell returns a result set with rows (no errors) |
+
+### 3. Persistence test (Step 5)
+
+1. Restart the Livy session with `%manage_spark` (or the SparkMagic toolbar button).
+2. **Do not re-run Step 3** — the data must already be there.
+3. Run the Step 5 cell:
+
+```python
+count = spark.table("risk_dw.trades").count()
+print(f"Rows after session restart: {count:,}")
+assert count == 10_000
+```
+
+**Pass condition**: prints `Rows after session restart: 10,000` and the assert passes.  
+**If it fails**: the `hive-warehouse` Docker volume is not mounted correctly, or `postgres` data was lost (check `docker compose down -v` was not run).
+
+### 4. Cross-user catalog visibility (Step 6)
+
+1. Open a **second browser tab** and log in as **bob** (`http://localhost:8000`, password: `sparkmagic`).
+2. Start a new notebook, select the **PySpark** kernel.
+3. Run the following cell — **no `CREATE DATABASE` or `CREATE TABLE` needed**:
+
+```sql
+%%sql
+SELECT trader, COUNT(*) AS trades
+FROM risk_dw.trades
+GROUP BY trader
+ORDER BY trades DESC
+```
+
+**Pass condition**: the query returns rows (alice/bob/carol/dave trade counts). This is the core
+value of a shared metastore — **one user creates, all users discover**.
+
+### 5. Inspect active sessions (Step 7)
+
+Back in alice's notebook, run the `%%local` cell in Step 7. It calls the Livy REST API directly
+from the singleuser container:
+
+```
+Active Livy sessions: 2
+  id=0  state=idle  kind=pyspark  appId=app-...
+  id=1  state=idle  kind=pyspark  appId=app-...
+```
+
+**Pass condition**: both session IDs appear, each with state `idle`.
+
+### 6. Verify warehouse files on disk
+
+```powershell
+docker exec hive-metastore find /opt/hive/data/warehouse -name "*.parquet" | Select-Object -First 5
+```
+
+You should see Parquet part-files under `risk_dw.db/trades/`. The same path is visible inside
+`spark-worker` because both containers mount the same `hive-warehouse` volume.
+
+### 7. Validate the Hive Metastore in PostgreSQL
+
+The Hive Metastore stores all catalog metadata (databases, tables, columns, partitions, storage
+descriptors) in PostgreSQL. After running Step 3 of the notebook you should see those records
+directly in the DB.
+
+#### Connect to the postgres container
+
+```powershell
+docker exec -it postgres psql -U hive -d metastore
+```
+
+#### Check the schema was initialised
+
+```sql
+\dt
+```
+
+Expected output: a list of ~70 HMS tables (`TBLS`, `DBS`, `COLUMNS_V2`, `SDS`, `PARTITIONS`, …).
+
+If the list is empty, the HMS schema initialisation failed — check `hive-metastore` container logs:
+```powershell
+docker logs hive-metastore --tail 50
+```
+
+#### Verify the `risk_dw` database record
+
+```sql
+SELECT DB_ID, NAME, DB_LOCATION_URI
+FROM "DBS"
+WHERE NAME = 'risk_dw';
+```
+
+Expected:
+
+| DB_ID | NAME    | DB_LOCATION_URI                                        |
+|-------|---------|--------------------------------------------------------|
+| 2     | risk_dw | file:/opt/hive/data/warehouse/risk_dw.db               |
+
+#### Verify the `trades` table record
+
+```sql
+SELECT t.TBL_ID, t.TBL_NAME, t.TBL_TYPE, d.NAME AS db_name
+FROM "TBLS" t
+JOIN "DBS"  d ON d.DB_ID = t.DB_ID
+WHERE d.NAME = 'risk_dw';
+```
+
+Expected one row: `TBL_NAME = trades`, `TBL_TYPE = MANAGED_TABLE`.
+
+#### Inspect column definitions
+
+```sql
+SELECT COLUMN_NAME, TYPE_NAME, INTEGER_IDX
+FROM "COLUMNS_V2"
+WHERE CD_ID = (
+    SELECT CD_ID FROM "SDS"
+    WHERE SD_ID = (
+        SELECT SD_ID FROM "TBLS"
+        WHERE TBL_NAME = 'trades'
+    )
+)
+ORDER BY INTEGER_IDX;
+```
+
+Expected columns (alphabetical within the schema):
+
+| COLUMN_NAME  | TYPE_NAME |
+|--------------|-----------|
+| instrument   | string    |
+| notional     | double    |
+| trade_date   | string    |
+| trade_id     | string    |
+| trader       | string    |
+
+#### Check storage descriptor (file format and location)
+
+```sql
+SELECT s.LOCATION, s.INPUT_FORMAT, s.OUTPUT_FORMAT
+FROM "SDS" s
+JOIN "TBLS" t ON t.SD_ID = s.SD_ID
+WHERE t.TBL_NAME = 'trades';
+```
+
+| LOCATION | INPUT_FORMAT | OUTPUT_FORMAT |
+|---|---|---|
+| `file:/opt/hive/data/warehouse/risk_dw.db/trades` | `org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat` | `org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat` |
+
+#### Confirm row count is not stored in PostgreSQL
+
+HMS does not store row counts in PostgreSQL by default — the count lives in the Parquet files. To
+verify the count you must go through Spark (or `hive-metastore` stats collection). If you see
+`NUM_ROWS = 10000` in `TABLE_PARAMS` it means Spark wrote statistics:
+
+```sql
+SELECT PARAM_KEY, PARAM_VALUE
+FROM "TABLE_PARAMS"
+WHERE TBL_ID = (
+    SELECT TBL_ID FROM "TBLS" WHERE TBL_NAME = 'trades'
+)
+ORDER BY PARAM_KEY;
+```
+
+Look for `numRows`, `totalSize`, `spark.sql.statistics.numRows` — these confirm Spark wrote
+Parquet statistics back to HMS. It is normal for these to be absent on first load.
+
+#### Exit psql
+
+```sql
+\q
+```
+
+### Architecture data flow (Phase 3)
+
+```
+SparkMagic kernel
+  | POST /sessions/0/statements
+  v
+Livy (driver)
+  | thrift://hive-metastore:9083   <- resolve table metadata
+  v
+hive-metastore  ------>  postgres:5432  (store/read table records)
+
+Livy (driver)
+  | spark://spark-master:7077
+  v
+spark-worker (executor)
+  | writes Parquet files to
+  v
+/opt/hive/data/warehouse  (hive-warehouse Docker volume)
+  ^-- same volume mounted in hive-metastore
+```
+
+### Production equivalence
+
+| This stack | Production |
+|---|---|
+| `postgres` in Docker | Managed RDS / Cloud SQL |
+| `/opt/hive/data/warehouse` (Docker volume) | `hdfs:///user/hive/warehouse` |
+| No auth on HMS | SASL + Kerberos (Phase 5) |
+| Single HMS instance | HMS with ZooKeeper HA |
+
+---
+
 ## Preventing resource contention (many engineers in parallel)
 
 Moving the driver from the jumpbox to Livy eliminates per-user driver RAM piling up on the
@@ -310,25 +559,24 @@ c.DockerSpawner.cpu_limit = 2
 
 ## Phase roadmap
 
-Each completed phase is tagged in git (`phase-1`, `phase-2`, …) so you can always restore an
-exact working state with `git checkout phase-N`. New phases are added as **Docker Compose overlay
-files** (`docker-compose.phaseN.yml`) that extend the base rather than modify it:
+A single `docker-compose.yml` grows incrementally — each phase adds services with a comment
+marking when they were introduced. Each validated phase is captured as a git tag:
 
 ```powershell
-# run phase 3 (Hive) on top of the base stack
-docker compose -f docker-compose.yml -f docker-compose.phase3.yml up
+git checkout phase-2          # restore exact Phase 2 state
+docker compose up --build     # spin it up
 ```
 
-The base `docker-compose.yml` always stays runnable at the latest validated phase.
+To see all tags: `git tag`. To return to the latest: `git checkout master`.
 
-| Phase | Status | Git tag | Compose file | Adds |
-|---|---|---|---|---|
-| 1 -- Core chain | done | `phase-1` | `docker-compose.yml` | `spark-master`, `spark-worker`, `livy`, single `jupyter` |
-| 2 -- JupyterHub | done | `phase-2` | `docker-compose.yml` | DockerSpawner; per-user containers + volumes |
-| 3 -- Hive Metastore | next | | `docker-compose.phase3.yml` | HMS container; `%%sql SHOW TABLES` against real catalog |
-| 4 -- kind + KubeSpawner | planned | | `docker-compose.phase4.yml` | K8s-in-Docker; Zero-to-JupyterHub Helm chart |
-| 5 -- Kerberos + SPNEGO | planned | | `docker-compose.phase5.yml` | MIT KDC; SPNEGO on Livy + HMS; `kinit`-renewer sidecar |
-| 6 -- Production docs | planned | | -- | Architecture doc; production checklist; YARN config |
+| Phase | Status | Git tag | Adds |
+|---|---|---|---|
+| 1 -- Core chain | done | `phase-1` | `spark-master`, `spark-worker`, `livy`, single `jupyter` |
+| 2 -- JupyterHub | done | `phase-2` | DockerSpawner; per-user containers + volumes |
+| 3 -- Hive Metastore | done | `phase-3` | `postgres` + `hive-metastore`; persistent SQL catalog; `%%sql SHOW TABLES` |
+| 4 -- kind + KubeSpawner | planned | | K8s-in-Docker; Zero-to-JupyterHub Helm chart |
+| 5 -- Kerberos + SPNEGO | planned | | MIT KDC; SPNEGO on Livy + HMS; `kinit`-renewer sidecar |
+| 6 -- Production docs | planned | | Architecture doc; production checklist; YARN config |
 
 > Kerberos is deliberately last -- it is a cross-cutting concern that touches every service
 > (Livy, HMS, HDFS, YARN). Adding it after all services are validated individually is much easier.

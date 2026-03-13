@@ -1,12 +1,23 @@
-# Phase 2: JupyterHub + DockerSpawner → SparkMagic → Livy → Spark standalone
+# Incremental PoC: JupyterHub → SparkMagic → Livy → Spark/YARN
 # DummyAuthenticator (any user / password "sparkmagic") — dev only.
 #
-# Services:
-#   spark-master   Spark standalone master
-#   spark-worker   One Spark worker (scale up with --scale spark-worker=N)
-#   livy           Apache Livy REST server (talks to Spark standalone)
-#   jupyterhub     JupyterHub — spawns per-user singleuser containers
-#   singleuser     (build-only) per-user JupyterLab image with SparkMagic
+# Phase strategy: this single file grows with each phase.
+# Each validated phase is captured as a git tag:
+#   git checkout phase-1   → Phase 1 stack
+#   git checkout phase-2   → Phase 2 stack (current)
+#   git checkout phase-3   → Phase 3 stack  (next)
+# To restore any snapshot:  git checkout phase-N && docker compose up --build
+#
+# Current phase: 3 — Hive Metastore
+#
+# Services (phase added in parentheses):
+#   spark-master      (1)  Spark standalone master
+#   spark-worker      (1)  Spark worker (scale: --scale spark-worker=N)
+#   livy              (1)  Apache Livy REST server
+#   jupyterhub        (2)  JupyterHub — spawns per-user singleuser containers
+#   singleuser        (2)  (build-only) per-user JupyterLab + SparkMagic
+#   hive-metastore    (3)  Hive Metastore Thrift server
+#   postgres          (3)  HMS backing store
 #
 # Usage:
 #   docker compose up --build
@@ -41,6 +52,8 @@ services:
       SPARK_NO_DAEMONIZE: "true"
       SPARK_WORKER_MEMORY: "2G"
       SPARK_WORKER_CORES: "2"
+    volumes:
+      - hive-warehouse:/opt/hive/data/warehouse  # (phase 3) shared with hive-metastore
     depends_on:
       - spark-master
     networks:
@@ -60,6 +73,16 @@ services:
     volumes:
       - ./config/livy/livy.conf:/opt/livy/conf/livy.conf:ro
       - ./config/livy/livy-env.sh:/opt/livy/conf/livy-env.sh:ro
+      - ./config/livy/spark-defaults.conf:/opt/livy/conf/spark-defaults.conf:ro
+      # hive-site.xml on the Livy JVM classpath is how Livy detects that HMS is
+      # available and switches from in-memory to hive catalog automatically.
+      # (/opt/livy/conf is on the -cp of the Livy server process)
+      - ./config/hive/hive-site.xml:/opt/livy/conf/hive-site.xml:ro
+      # (phase 3) Spark driver runs in Livy (client mode), so the driver also
+      # needs access to the warehouse volume for file:/ path resolution during
+      # saveAsTable (overwrite mode checks/deletes the existing path via the
+      # local FS before executors write new data).
+      - hive-warehouse:/opt/hive/data/warehouse
     ports:
       - "8998:8998"   # Livy REST API
     depends_on:
@@ -106,6 +129,52 @@ services:
     command: ["jupyterhub", "-f", "/srv/jupyterhub/jupyterhub_config.py"]
 
   # ---------------------------------------------------------------------------
+  # Phase 3: Hive Metastore + PostgreSQL backing store
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_DB: metastore
+      POSTGRES_USER: hive
+      POSTGRES_PASSWORD: hive
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - spark-net
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "hive", "-d", "metastore"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  hive-metastore:
+    build:
+      context: ./docker/hive-metastore
+      dockerfile: Dockerfile
+    container_name: hive-metastore
+    environment:
+      SERVICE_NAME: metastore
+      DB_DRIVER: postgres
+    volumes:
+      - ./config/hive/hive-site.xml:/opt/hive/conf/hive-site.xml:ro
+      - hive-warehouse:/opt/hive/data/warehouse
+    ports:
+      - "9083:9083"   # HMS thrift port (exposed for debugging)
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - spark-net
+    healthcheck:
+      # CMD-SHELL runs via /bin/sh; /dev/tcp is bash-only so we invoke bash explicitly
+      test: ["CMD", "bash", "-c", "</dev/tcp/localhost/9083"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  # ---------------------------------------------------------------------------
   # Singleuser image (build target only — not a running service)
   # DockerSpawner pulls this image to create per-user containers.
   # Build context is the repo root so the Dockerfile can COPY from
@@ -123,6 +192,8 @@ services:
 
 volumes:
   jupyterhub-data:   # persists hub DB + cookie secret across docker compose down/up
+  postgres-data:     # (phase 3) HMS PostgreSQL backing store
+  hive-warehouse:    # (phase 3) Parquet warehouse — shared between hive-metastore and spark-worker
 
 networks:
   spark-net:

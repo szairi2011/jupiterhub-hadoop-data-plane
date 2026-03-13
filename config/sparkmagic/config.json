@@ -17,7 +17,10 @@
     "executorMemory": "1G",
     "executorCores": 1,
     "numExecutors": 1,
-    "conf": {}
+    "conf": {
+      "spark.sql.catalogImplementation": "hive",
+      "spark.hadoop.hive.metastore.uris": "thrift://hive-metastore:9083"
+    }
   },
   "use_auto_viz": true,
   "coerce_dataframe": true,
