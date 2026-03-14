@@ -145,7 +145,7 @@
   .tier-note { color: #999; font-size: 11px; margin-top: 6px; }
 
   .controls {
-    width: 230px;
+    width: 280px;
     flex-shrink: 0;
     padding: 14px 16px;
     background: white;
@@ -229,6 +229,39 @@
   [data-lang-block] { display: none; }
   .lang-fr [data-lang-block="fr"] { display: block; }
   .lang-en [data-lang-block="en"] { display: block; }
+
+  /* ── Config param blocks ── */
+  .conf-block {
+    margin-top: 11px;
+    padding: 8px 10px;
+    background: #f7f9fc;
+    border-left: 3px solid #4361ee;
+    border-radius: 0 6px 6px 0;
+    font-size: 11.5px;
+  }
+  .conf-block .conf-title {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: #4361ee;
+    margin-bottom: 6px;
+  }
+  .conf-block code {
+    display: block;
+    font-family: Consolas, 'Courier New', monospace;
+    margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: visible;
+  }
+  .conf-block code .ck { color: #555; }
+  .conf-block code .cv { color: #1a7a4a; font-weight: 700; }
+  .conf-block .conf-src {
+    font-size: 9.5px;
+    color: #aaa;
+    font-style: italic;
+    margin-top: 5px;
+  }
 </style>
 </head>
 <body class="lang-fr">
@@ -241,8 +274,8 @@
 
 <!-- ══ Title ══ -->
 <h1>
-  <span data-lang="fr">Plateforme Big Data &mdash; Vue d&rsquo;ensemble de l&rsquo;architecture</span>
-  <span data-lang="en">Big Data Platform &mdash; Architecture Overview</span>
+  <span data-lang="fr">JupyterHub (Context -- Plateforme Big Data) &mdash; Vue d&rsquo;ensemble de l&rsquo;architecture</span>
+  <span data-lang="en">JupiterHub within Big Data Platform &mdash; Architecture Overview</span>
 </h1>
 <p class="subtitle">
   <span data-lang="fr">Isolation des ressources et gouvernance apport&eacute;es par JupyterHub&nbsp;+&nbsp;Livy&nbsp;+&nbsp;Spark</span>
@@ -373,6 +406,17 @@
           <span data-lang="en">Idle servers culled automatically</span>
         </li>
       </ul>
+      <div class="conf-block">
+        <div class="conf-title">
+          <span data-lang="fr">Param&egrave;tres actifs</span>
+          <span data-lang="en">Active parameters</span>
+        </div>
+        <code><span class="ck">cpu_limit</span> = <span class="cv">2</span></code>
+        <code><span class="ck">cpu_guarantee</span> = <span class="cv">0.1</span></code>
+        <code><span class="ck">mem_limit</span> = <span class="cv">&quot;2G&quot;</span></code>
+        <code><span class="ck">mem_guarantee</span> = <span class="cv">&quot;256M&quot;</span></code>
+        <div class="conf-src">helm-values.yaml &rarr; KubeSpawner</div>
+      </div>
     </div>
   </div>
 
@@ -423,6 +467,19 @@
           <span data-lang="en">One session reused per user notebook</span>
         </li>
       </ul>
+      <div class="conf-block">
+        <div class="conf-title">
+          <span data-lang="fr">Param&egrave;tres actifs</span>
+          <span data-lang="en">Active parameters</span>
+        </div>
+        <code><span class="ck">server.port</span> = <span class="cv">8998</span></code>
+        <code><span class="ck">session.max-creation</span> = <span class="cv">20</span></code>
+        <code><span class="ck">session.timeout</span> = <span class="cv">1h</span></code>
+        <code><span class="ck">spark.deploy-mode</span> = <span class="cv">client</span></code>
+        <code><span class="ck">spark.master</span> = <span class="cv">yarn</span></code>
+        <code><span class="ck">enable-hive-context</span> = <span class="cv">true</span></code>
+        <div class="conf-src">livy.conf</div>
+      </div>
     </div>
   </div>
 
@@ -449,6 +506,43 @@
         <span data-lang="fr">Executors lanc&eacute;s dynamiquement &middot; Ressources restitu&eacute;es au pool apr&egrave;s chaque job</span>
         <span data-lang="en">Executors launched dynamically &middot; Resources returned to the pool after each job</span>
       </div>
+      <!-- YARN Queue diagram -->
+      <div style="margin-top:14px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#7b2d8b;margin-bottom:8px;">
+          <span data-lang="fr">Files YARN (Capacity Scheduler)</span>
+          <span data-lang="en">YARN Queues (Capacity Scheduler)</span>
+        </div>
+        <div style="display:flex;gap:0;border-radius:6px;overflow:hidden;border:1px solid #ddd;font-size:11px;">
+          <div style="flex:0 0 30%;background:#4361ee;color:white;padding:7px 10px;">
+            <div style="font-weight:700;">data-engineering</div>
+            <div style="font-size:10px;opacity:.85;">40%</div>
+            <div style="font-size:10px;opacity:.75;">
+              <span data-lang="fr">pipelines ETL</span>
+              <span data-lang="en">ETL pipelines</span>
+            </div>
+          </div>
+          <div style="flex:0 0 50%;background:#7b2d8b;color:white;padding:7px 10px;">
+            <div style="font-weight:700;">data-science</div>
+            <div style="font-size:10px;opacity:.85;">45%</div>
+            <div style="font-size:10px;opacity:.75;">
+              <span data-lang="fr">notebooks utilisateurs</span>
+              <span data-lang="en">user notebooks</span>
+            </div>
+          </div>
+          <div style="flex:0 0 20%;background:#a0a0b0;color:white;padding:7px 10px;">
+            <div style="font-weight:700;">reporting</div>
+            <div style="font-size:10px;opacity:.85;">15%</div>
+            <div style="font-size:10px;opacity:.75;">
+              <span data-lang="fr">tableaux de bord</span>
+              <span data-lang="en">dashboards</span>
+            </div>
+          </div>
+        </div>
+        <div style="font-size:10px;color:#bbb;font-style:italic;margin-top:4px;text-align:right;">
+          <span data-lang="fr">Exemple &mdash; configurable par l&rsquo;admin cluster</span>
+          <span data-lang="en">Example &mdash; configurable by the cluster admin</span>
+        </div>
+      </div>
     </div>
     <div class="controls">
       <div class="controls-label">
@@ -472,693 +566,55 @@
           <span data-lang="fr">Files YARN pour la priorit&eacute; (admin cluster)</span>
           <span data-lang="en">YARN queues for job priority (cluster admin)</span>
         </li>
+        <li>
+          <span data-lang="fr">Capacit&eacute; min. garantie par file &mdash; pas de famine entre &eacute;quipes</span>
+          <span data-lang="en">Min. capacity guaranteed per queue &mdash; no starvation across teams</span>
+        </li>
+        <li>
+          <span data-lang="fr">Cible la file via <code style="font-size:11px;">spark.yarn.queue</code> dans la session</span>
+          <span data-lang="en">Target queue via <code style="font-size:11px;">spark.yarn.queue</code> in session config</span>
+        </li>
       </ul>
+      <div class="conf-block" style="border-left-color:#a0a0b0;margin-top:8px;">
+        <div class="conf-title" style="color:#555;">
+          <span data-lang="fr">Files YARN &mdash; param&egrave;tres cl&eacute;s</span>
+          <span data-lang="en">YARN queues &mdash; key parameters</span>
+        </div>
+        <code><span class="ck">spark.yarn.queue</span> = <span class="cv">data-science</span></code>
+        <code><span class="ck">yarn.scheduler.capacity.&lt;queue&gt;.capacity</span></code>
+        <code><span class="ck">yarn.scheduler.capacity.&lt;queue&gt;.maximum-capacity</span></code>
+        <code><span class="ck">yarn.scheduler.capacity.&lt;queue&gt;.user-limit-factor</span></code>
+        <div class="conf-src">yarn-site.xml &bull; capacity-scheduler.xml</div>
+      </div>
+      <div class="conf-block">
+        <div class="conf-title">
+          <span data-lang="fr">Param&egrave;tres actifs</span>
+          <span data-lang="en">Active parameters</span>
+        </div>
+        <code><span class="ck">SPARK_WORKER_MEMORY</span> = <span class="cv">2G</span></code>
+        <code><span class="ck">SPARK_WORKER_CORES</span> = <span class="cv">2</span></code>
+        <code><span class="ck">spark.sql.catalogImplementation</span> = <span class="cv">hive</span></code>
+        <code><span class="ck">hive.metastore.uris</span> = <span class="cv">thrift://...:9083</span></code>
+        <div class="conf-src">docker-compose.yml &bull; spark-defaults.conf</div>
+      </div>
+      <div class="conf-block" style="border-left-color:#7b2d8b;margin-top:8px;">
+        <div class="conf-title" style="color:#7b2d8b;">
+          <span data-lang="fr">Ressources executor (par session)</span>
+          <span data-lang="en">Executor resources (per session)</span>
+        </div>
+        <code><span class="ck">executorMemory</span> = <span class="cv">1G</span></code>
+        <code><span class="ck">executorCores</span> = <span class="cv">1</span></code>
+        <code><span class="ck">numExecutors</span> = <span class="cv">1</span></code>
+        <code><span class="ck">driverMemory</span> = <span class="cv">1G</span></code>
+        <code><span class="ck">driverCores</span> = <span class="cv">1</span></code>
+        <div class="conf-src">sparkmagic/config.json &rarr; session_configs</div>
+      </div>
     </div>
   </div>
 
 </div>
 
-<!-- ══════════════════════════════════════════════════════════════════
-     SECTION 3 — Architecture diagram (sketch-style, left-to-right)
-     ══════════════════════════════════════════════════════════════════ -->
-<div style="max-width:1095px;margin:60px auto 0;">
-  <p class="arch-title" style="margin-bottom:6px;">
-    <span data-lang="fr">&#127959; Architecture propos&eacute;e &mdash; M&eacute;moire &amp; param&egrave;tres configurables</span>
-    <span data-lang="en">&#127959; Proposed Architecture &mdash; Memory &amp; Configurable Parameters</span>
-  </p>
-  <p style="text-align:center;font-size:12px;color:#888;margin-bottom:24px;">
-    <span data-lang="fr">Param&egrave;tres en vert = valeurs r&eacute;elles des fichiers de conf du projet &nbsp;&#183;&nbsp; Valeurs m&eacute;moire = cibles production</span>
-    <span data-lang="en">Green params = actual values from project config files &nbsp;&#183;&nbsp; Memory values = production targets</span>
-  </p>
 
-  <!-- ══ SVG DIAGRAM ══ -->
-  <svg viewBox="0 0 1090 480" xmlns="http://www.w3.org/2000/svg"
-       style="width:100%;display:block;margin:0 auto;overflow:visible;"
-       font-family="'Segoe UI',Arial,sans-serif">
-    <defs>
-      <marker id="arw" markerWidth="8" markerHeight="6" refX="7.5" refY="3" orient="auto">
-        <polygon points="0 0,8 3,0 6" fill="#333"/>
-      </marker>
-    </defs>
-
-    <!-- ═══════════════════════════════════════════
-         ZONE 1 — JupyterHub Server (K8s, dashed)
-         ═══════════════════════════════════════════ -->
-    <rect x="5" y="5" width="128" height="338" rx="7" fill="#f0f4ff" stroke="#4361ee" stroke-width="1.5" stroke-dasharray="7,3"/>
-    <text x="10" y="20" font-size="10.5" font-weight="700" fill="#4361ee">
-      <tspan class="svgfr">Serveur JupyterHub</tspan>
-      <tspan class="svgen">JupyterHub Server</tspan>
-    </text>
-    <!-- inner JupyterHub box -->
-    <rect x="14" y="130" width="111" height="78" rx="5" fill="white" stroke="#4361ee" stroke-width="1.5"/>
-    <text x="69" y="158" text-anchor="middle" font-size="13" font-weight="700" fill="#1e3a5f">JupyterHub</text>
-    <text x="69" y="175" text-anchor="middle" font-size="9" fill="#888">Hub + Proxy</text>
-    <text x="69" y="190" text-anchor="middle" font-size="9" fill="#aaa">localhost:8001</text>
-
-    <!-- ═══════════════════════════════════════════
-         ZONE 2 — User Notebook Pods (K8s)
-         ═══════════════════════════════════════════ -->
-    <!-- Pod 1 -->
-    <rect x="168" y="5" width="157" height="150" rx="6" fill="white" stroke="#4361ee" stroke-width="1.5"/>
-    <text x="246" y="22" text-anchor="middle" font-size="10" font-weight="700" fill="#4361ee">
-      <tspan class="svgfr">Pod Notebook (K8s)</tspan>
-      <tspan class="svgen">User Notebook Pod</tspan>
-    </text>
-    <rect x="177" y="30" width="139" height="62" rx="4" fill="#f8f8f8" stroke="#ccc" stroke-width="1"/>
-    <text x="246" y="56" text-anchor="middle" font-size="12" font-weight="600" fill="#333">&#128211; Jupyter Notebook</text>
-    <text x="246" y="72" text-anchor="middle" font-size="8.5" fill="#888">SparkMagic kernel</text>
-    <text x="246" y="85" text-anchor="middle" font-size="8.5" fill="#f77f00" font-family="Consolas,monospace">&#8594; livy:8998</text>
-    <text x="177" y="112" font-size="8.5" fill="#555" font-family="Consolas,monospace">mem_limit = "2G"</text>
-    <text x="177" y="127" font-size="8.5" fill="#555" font-family="Consolas,monospace">cpu_limit = 2</text>
-    <text x="246" y="145" text-anchor="middle" font-size="8" fill="#bbb" font-style="italic">helm-values.yaml</text>
-
-    <!-- Pod 2 -->
-    <rect x="168" y="226" width="157" height="150" rx="6" fill="white" stroke="#4361ee" stroke-width="1.5"/>
-    <text x="246" y="243" text-anchor="middle" font-size="10" font-weight="700" fill="#4361ee">
-      <tspan class="svgfr">Pod Notebook (K8s)</tspan>
-      <tspan class="svgen">User Notebook Pod</tspan>
-    </text>
-    <rect x="177" y="251" width="139" height="62" rx="4" fill="#f8f8f8" stroke="#ccc" stroke-width="1"/>
-    <text x="246" y="277" text-anchor="middle" font-size="12" font-weight="600" fill="#333">&#128211; Jupyter Notebook</text>
-    <text x="246" y="293" text-anchor="middle" font-size="8.5" fill="#888">SparkMagic kernel</text>
-    <text x="246" y="306" text-anchor="middle" font-size="8.5" fill="#f77f00" font-family="Consolas,monospace">&#8594; livy:8998</text>
-    <text x="177" y="333" font-size="8.5" fill="#555" font-family="Consolas,monospace">mem_limit = "2G"</text>
-    <text x="177" y="347" font-size="8.5" fill="#555" font-family="Consolas,monospace">cpu_limit = 2</text>
-    <text x="246" y="366" text-anchor="middle" font-size="8" fill="#bbb" font-style="italic">helm-values.yaml</text>
-
-    <!-- ═══════════════════════════════════════════
-         ZONE 3a — Spark Driver (cyan, top path)
-         ═══════════════════════════════════════════ -->
-    <rect x="382" y="18" width="148" height="118" rx="6" fill="#00bcd4" stroke="#0097a7" stroke-width="1.5"/>
-    <text x="456" y="50" text-anchor="middle" font-size="13" font-weight="700" fill="white">Spark Driver</text>
-    <text x="456" y="68" text-anchor="middle" font-size="11" fill="rgba(255,255,255,0.95)">
-      <tspan class="svgfr">4 GB (Mode Client)</tspan>
-      <tspan class="svgen">4 GB (Client Mode)</tspan>
-    </text>
-    <line x1="382" y1="78" x2="530" y2="78" stroke="rgba(255,255,255,0.3)" stroke-width="1"/>
-    <text x="386" y="93"  font-size="8.5" fill="rgba(255,255,255,0.9)" font-family="Consolas,monospace">spark.driver.memory</text>
-    <text x="527" y="93"  text-anchor="end" font-size="8.5" fill="white" font-family="Consolas,monospace">= 4g</text>
-    <text x="386" y="107" font-size="8.5" fill="rgba(255,255,255,0.9)" font-family="Consolas,monospace">driver.memoryOverhead</text>
-    <text x="527" y="107" text-anchor="end" font-size="8.5" fill="white" font-family="Consolas,monospace">= 1g</text>
-    <text x="386" y="128" font-size="8.5" fill="rgba(255,255,255,0.85)" font-family="Consolas,monospace">deploy-mode = client</text>
-
-    <!-- ═══════════════════════════════════════════
-         ZONE 3b — Livy Server (bottom path)
-         ═══════════════════════════════════════════ -->
-    <rect x="382" y="239" width="148" height="120" rx="6" fill="white" stroke="#f77f00" stroke-width="2"/>
-    <text x="456" y="270" text-anchor="middle" font-size="13" font-weight="700" fill="#f77f00">&#9889; Livy Server</text>
-    <line x1="382" y1="277" x2="530" y2="277" stroke="#f77f00" stroke-width="1" opacity="0.3"/>
-    <text x="386" y="293" font-size="8.5" fill="#555" font-family="Consolas,monospace">livy.server.port</text>
-    <text x="527" y="293" text-anchor="end" font-size="8.5" fill="#1a7a4a" font-family="Consolas,monospace">= 8998</text>
-    <text x="386" y="308" font-size="8.5" fill="#555" font-family="Consolas,monospace">session.max-creation</text>
-    <text x="527" y="308" text-anchor="end" font-size="8.5" fill="#1a7a4a" font-family="Consolas,monospace">= 20</text>
-    <text x="386" y="323" font-size="8.5" fill="#555" font-family="Consolas,monospace">session.timeout</text>
-    <text x="527" y="323" text-anchor="end" font-size="8.5" fill="#1a7a4a" font-family="Consolas,monospace">= 1h</text>
-    <text x="386" y="338" font-size="8.5" fill="#555" font-family="Consolas,monospace">deploy-mode</text>
-    <text x="527" y="338" text-anchor="end" font-size="8.5" fill="#1a7a4a" font-family="Consolas,monospace">= client</text>
-    <text x="456" y="353" text-anchor="middle" font-size="8" fill="#bbb" font-style="italic">livy.conf</text>
-
-    <!-- ═══════════════════════════════════════════
-         ZONE 4 — YARN ResourceManager
-         ═══════════════════════════════════════════ -->
-    <rect x="588" y="135" width="138" height="115" rx="6" fill="white" stroke="#555" stroke-width="1.5"/>
-    <text x="657" y="180" text-anchor="middle" font-size="13" font-weight="700" fill="#333">YARN</text>
-    <text x="657" y="199" text-anchor="middle" font-size="11" fill="#333">ResourceManager</text>
-    <text x="657" y="222" text-anchor="middle" font-size="8.5" fill="#bbb" font-style="italic">
-      <tspan class="svgfr">&#8594; Spark Standalone en dev</tspan>
-      <tspan class="svgen">&#8594; Spark Standalone in dev</tspan>
-    </text>
-    <text x="657" y="238" text-anchor="middle" font-size="8" fill="#ccc" font-family="Consolas,monospace">spark://spark-master:7077</text>
-
-    <!-- ═══════════════════════════════════════════
-         ZONE 5 — Node1 (container) + ApplicationMaster
-         ═══════════════════════════════════════════ -->
-    <rect x="783" y="2" width="158" height="468" rx="6" fill="white" stroke="#333" stroke-width="1.5"/>
-    <text x="788" y="17" font-size="10.5" font-weight="700" fill="#333">Node1</text>
-    <!-- ApplicationMaster magenta box -->
-    <rect x="791" y="25" width="142" height="375" rx="5" fill="#e040fb"/>
-    <text x="862" y="78" text-anchor="middle" font-size="12" font-weight="700" fill="white">ApplicationMaster</text>
-    <text x="862" y="96" text-anchor="middle" font-size="12" font-weight="700" fill="white">Spark Driver</text>
-    <text x="862" y="124" text-anchor="middle" font-size="26" font-weight="800" fill="white">4 GB</text>
-    <line x1="791" y1="137" x2="933" y2="137" stroke="rgba(255,255,255,0.3)" stroke-width="1"/>
-    <text x="795" y="155" font-size="8.5" fill="rgba(255,255,255,0.9)" font-family="Consolas,monospace">spark.driver.memory</text>
-    <text x="930" y="155" text-anchor="end" font-size="8.5" fill="white" font-family="Consolas,monospace">= 4g</text>
-    <text x="795" y="170" font-size="8.5" fill="rgba(255,255,255,0.9)" font-family="Consolas,monospace">executor.memory</text>
-    <text x="930" y="170" text-anchor="end" font-size="8.5" fill="white" font-family="Consolas,monospace">= 6g</text>
-    <text x="795" y="185" font-size="8.5" fill="rgba(255,255,255,0.9)" font-family="Consolas,monospace">executor.cores</text>
-    <text x="930" y="185" text-anchor="end" font-size="8.5" fill="white" font-family="Consolas,monospace">= 4</text>
-    <text x="795" y="200" font-size="8.5" fill="rgba(255,255,255,0.9)" font-family="Consolas,monospace">executor.memOverhead</text>
-    <text x="930" y="200" text-anchor="end" font-size="8.5" fill="white" font-family="Consolas,monospace">= 1g</text>
-    <line x1="791" y1="213" x2="933" y2="213" stroke="rgba(255,255,255,0.2)" stroke-width="1"/>
-    <text x="862" y="235" text-anchor="middle" font-size="8.5" fill="rgba(255,255,255,0.85)" font-family="Consolas,monospace">memory.fraction = 0.6</text>
-    <text x="862" y="252" text-anchor="middle" font-size="8.5" fill="rgba(255,255,255,0.7)" font-family="Consolas,monospace">spark-defaults.conf</text>
-
-    <!-- ═══════════════════════════════════════════
-         ZONE 6 — Executor Nodes (right column)
-         ═══════════════════════════════════════════ -->
-    <!-- Node4 (top) -->
-    <rect x="960" y="2"   width="128" height="145" rx="6" fill="white" stroke="#333" stroke-width="1.5"/>
-    <text x="965" y="18"  font-size="10.5" font-weight="700" fill="#333">Node4</text>
-    <rect x="966" y="26"  width="114" height="108" rx="5" fill="#4caf50"/>
-    <text x="1023" y="66"  text-anchor="middle" font-size="13" font-weight="700" fill="white">Executor</text>
-    <text x="1023" y="93"  text-anchor="middle" font-size="24" font-weight="800" fill="white">6 GB</text>
-    <text x="1023" y="113" text-anchor="middle" font-size="8.5" fill="rgba(255,255,255,0.85)" font-family="Consolas,monospace">executor.memory = 6g</text>
-    <text x="1023" y="126" text-anchor="middle" font-size="8.5" fill="rgba(255,255,255,0.85)" font-family="Consolas,monospace">executor.cores = 4</text>
-
-    <!-- Node3 (middle) -->
-    <rect x="960" y="168" width="128" height="145" rx="6" fill="white" stroke="#333" stroke-width="1.5"/>
-    <text x="965" y="184" font-size="10.5" font-weight="700" fill="#333">Node3</text>
-    <rect x="966" y="192" width="114" height="108" rx="5" fill="#4caf50"/>
-    <text x="1023" y="232" text-anchor="middle" font-size="13" font-weight="700" fill="white">Executor</text>
-    <text x="1023" y="259" text-anchor="middle" font-size="24" font-weight="800" fill="white">6 GB</text>
-    <text x="1023" y="279" text-anchor="middle" font-size="8.5" fill="rgba(255,255,255,0.85)" font-family="Consolas,monospace">executor.memory = 6g</text>
-    <text x="1023" y="292" text-anchor="middle" font-size="8.5" fill="rgba(255,255,255,0.85)" font-family="Consolas,monospace">executor.cores = 4</text>
-
-    <!-- Node2 (bottom) -->
-    <rect x="960" y="330" width="128" height="145" rx="6" fill="white" stroke="#333" stroke-width="1.5"/>
-    <text x="965" y="346" font-size="10.5" font-weight="700" fill="#333">Node2</text>
-    <rect x="966" y="354" width="114" height="108" rx="5" fill="#4caf50"/>
-    <text x="1023" y="394" text-anchor="middle" font-size="13" font-weight="700" fill="white">Executor</text>
-    <text x="1023" y="421" text-anchor="middle" font-size="24" font-weight="800" fill="white">6 GB</text>
-    <text x="1023" y="441" text-anchor="middle" font-size="8.5" fill="rgba(255,255,255,0.85)" font-family="Consolas,monospace">executor.memory = 6g</text>
-    <text x="1023" y="454" text-anchor="middle" font-size="8.5" fill="rgba(255,255,255,0.85)" font-family="Consolas,monospace">executor.cores = 4</text>
-
-    <!-- ═══════════════════════════════════════════
-         ARROWS
-         ═══════════════════════════════════════════ -->
-    <!-- 1. JupyterHub → Pod1 (curve up) -->
-    <path d="M 125,158 C 150,158 150,80 168,80" fill="none" stroke="#333" stroke-width="1.5" marker-end="url(#arw)"/>
-    <!-- 2. JupyterHub → Pod2 (curve down) -->
-    <path d="M 125,178 C 150,178 150,301 168,301" fill="none" stroke="#333" stroke-width="1.5" marker-end="url(#arw)"/>
-
-    <!-- 3. Pod1 → Spark Driver -->
-    <path d="M 325,78 L 382,77" fill="none" stroke="#333" stroke-width="1.5" marker-end="url(#arw)"/>
-    <!-- 4. Pod2 → Livy Server -->
-    <path d="M 325,301 L 382,299" fill="none" stroke="#333" stroke-width="1.5" marker-end="url(#arw)"/>
-
-    <!-- 5. Spark Driver → YARN RM (curve down to center) -->
-    <path d="M 530,77 C 562,77 562,182 588,188" fill="none" stroke="#333" stroke-width="1.5" marker-end="url(#arw)"/>
-    <!-- 6. Livy → YARN RM (curve up to center) -->
-    <path d="M 530,299 C 562,299 562,210 588,205" fill="none" stroke="#333" stroke-width="1.5" marker-end="url(#arw)"/>
-
-    <!-- 7. YARN RM → Node1 AppMaster -->
-    <path d="M 726,193 L 791,193" fill="none" stroke="#333" stroke-width="1.5" marker-end="url(#arw)"/>
-
-    <!-- 8. AppMaster → Node4 Executor (curve up) -->
-    <path d="M 933,120 C 950,120 950,80 960,80" fill="none" stroke="#333" stroke-width="1.5" marker-end="url(#arw)"/>
-    <!-- 9. AppMaster → Node3 Executor (curve slight) -->
-    <path d="M 933,210 C 950,210 950,246 960,246" fill="none" stroke="#333" stroke-width="1.5" marker-end="url(#arw)"/>
-    <!-- 10. AppMaster → Node2 Executor (curve down) -->
-    <path d="M 933,300 C 950,300 950,408 960,408" fill="none" stroke="#333" stroke-width="1.5" marker-end="url(#arw)"/>
-
-  </svg>
-
-</div>
-<!-- end memory section -->
-
-    <!-- ═══════════════════════════════════════
-         ZONE 1 — Kubernetes Cluster (left column)
-         ═══════════════════════════════════════ -->
-    <rect x="5" y="10" width="209" height="520" rx="8" fill="#eef1ff" stroke="#4361ee" stroke-width="1.5" stroke-dasharray="7,3"/>
-    <!-- title band -->
-    <rect x="5" y="10" width="209" height="25" rx="8" fill="#4361ee"/>
-    <rect x="5" y="26" width="209" height="9" fill="#4361ee"/>
-    <text x="109" y="27" text-anchor="middle" fill="white" font-size="11" font-weight="bold">&#9784;  Kubernetes Cluster</text>
-
-    <!-- JupyterHub service box -->
-    <rect x="17" y="48" width="185" height="26" rx="5" fill="#4361ee"/>
-    <text x="109" y="66" text-anchor="middle" fill="white" font-size="10.5">JupyterHub &nbsp;&#183;&nbsp; Hub + Proxy</text>
-
-    <!-- KubeSpawner label -->
-    <text x="109" y="90" text-anchor="middle" fill="#4361ee" font-size="9.5">
-      <tspan class="svgfr">KubeSpawner &mdash; pods &agrave; la demande</tspan>
-      <tspan class="svgen">KubeSpawner &mdash; pods on demand</tspan>
-    </text>
-
-    <!-- Pod: alice -->
-    <rect x="17" y="100" width="84" height="32" rx="5" fill="#c5d0ff" stroke="#4361ee" stroke-width="1"/>
-    <text x="59" y="118" text-anchor="middle" fill="#1a2070" font-size="10" font-weight="600">&#128211; Pod: alice</text>
-    <text x="59" y="129" text-anchor="middle" fill="#555" font-size="8.5">2G RAM / 2 CPU</text>
-
-    <!-- Pod: bob -->
-    <rect x="117" y="100" width="85" height="32" rx="5" fill="#c5d0ff" stroke="#4361ee" stroke-width="1"/>
-    <text x="159" y="118" text-anchor="middle" fill="#1a2070" font-size="10" font-weight="600">&#128211; Pod: bob</text>
-    <text x="159" y="129" text-anchor="middle" fill="#555" font-size="8.5">2G RAM / 2 CPU</text>
-
-    <!-- Pod: more (dashed) -->
-    <rect x="67" y="142" width="84" height="26" rx="5" fill="#dce3ff" stroke="#4361ee" stroke-width="1" stroke-dasharray="4,2"/>
-    <text x="109" y="160" text-anchor="middle" fill="#1a2070" font-size="10">&#128211; Pod: &middot;&middot;&middot;</text>
-
-    <!-- separator -->
-    <line x1="17" y1="180" x2="197" y2="180" stroke="#b0bcee" stroke-width="1"/>
-
-    <!-- Config section header -->
-    <text x="109" y="196" text-anchor="middle" fill="#4361ee" font-size="9.5" font-style="italic">
-      <tspan class="svgfr">Limites de ressources par pod :</tspan>
-      <tspan class="svgen">Resource limits per pod:</tspan>
-    </text>
-    <text x="17" y="211" fill="#888" font-size="8.5" font-family="Consolas,monospace"># helm-values.yaml</text>
-    <!-- param rows: name left, value right -->
-    <text x="17"  y="226" fill="#333" font-size="9.5" font-family="Consolas,monospace">mem_limit</text>
-    <text x="17"  y="240" fill="#333" font-size="9.5" font-family="Consolas,monospace">mem_guarantee</text>
-    <text x="17"  y="254" fill="#333" font-size="9.5" font-family="Consolas,monospace">cpu_limit</text>
-    <text x="17"  y="268" fill="#333" font-size="9.5" font-family="Consolas,monospace">cpu_guarantee</text>
-    <text x="197" y="226" text-anchor="end" fill="#1a7a4a" font-size="9.5" font-family="Consolas,monospace">= "2G"</text>
-    <text x="197" y="240" text-anchor="end" fill="#1a7a4a" font-size="9.5" font-family="Consolas,monospace">= "256M"</text>
-    <text x="197" y="254" text-anchor="end" fill="#1a7a4a" font-size="9.5" font-family="Consolas,monospace">= 2</text>
-    <text x="197" y="268" text-anchor="end" fill="#1a7a4a" font-size="9.5" font-family="Consolas,monospace">= 0.1</text>
-
-    <!-- separator 2 -->
-    <line x1="17" y1="280" x2="197" y2="280" stroke="#b0bcee" stroke-width="1"/>
-
-    <!-- Idle culling -->
-    <text x="109" y="295" text-anchor="middle" fill="#4361ee" font-size="9.5" font-style="italic">
-      <tspan class="svgfr">Suppression des serveurs inactifs :</tspan>
-      <tspan class="svgen">Idle server culling:</tspan>
-    </text>
-    <text x="17"  y="310" fill="#888" font-size="8.5" font-family="Consolas,monospace"># jupyterhub_config.py</text>
-    <text x="17"  y="325" fill="#333" font-size="9.5" font-family="Consolas,monospace">cull_idle_timeout</text>
-    <text x="197" y="325" text-anchor="end" fill="#1a7a4a" font-size="9.5" font-family="Consolas,monospace">= 3600</text>
-    <text x="17"  y="340" fill="#333" font-size="9.5" font-family="Consolas,monospace">remove_named_servers</text>
-    <text x="197" y="340" text-anchor="end" fill="#1a7a4a" font-size="9.5" font-family="Consolas,monospace">= True</text>
-
-    <!-- ═══════════════════════════════════════
-         ARROW 1: K8s -> Livy
-         ═══════════════════════════════════════ -->
-    <line x1="215" y1="272" x2="251" y2="272" stroke="#555" stroke-width="1.5" marker-end="url(#arw)"/>
-    <text x="233" y="263" text-anchor="middle" fill="#555" font-size="8.5">HTTP REST</text>
-    <text x="233" y="283" text-anchor="middle" fill="#555" font-size="8.5">SparkMagic</text>
-
-    <!-- ═══════════════════════════════════════
-         ZONE 2 — Livy Edge Node (center column)
-         ═══════════════════════════════════════ -->
-    <rect x="253" y="55" width="183" height="435" rx="8" fill="#fff8ee" stroke="#f77f00" stroke-width="1.5" stroke-dasharray="7,3"/>
-    <!-- title band -->
-    <rect x="253" y="55" width="183" height="25" rx="8" fill="#f77f00"/>
-    <rect x="253" y="71" width="183" height="9" fill="#f77f00"/>
-    <text x="344" y="73" text-anchor="middle" fill="white" font-size="11" font-weight="bold">
-      <tspan class="svgfr">&#9889;  N&#339;ud Edge &mdash; Livy</tspan>
-      <tspan class="svgen">&#9889;  Edge Node &mdash; Livy</tspan>
-    </text>
-
-    <!-- Livy REST server box -->
-    <rect x="263" y="93" width="163" height="25" rx="5" fill="#f77f00"/>
-    <text x="344" y="111" text-anchor="middle" fill="white" font-size="10.5">Livy REST Server :8998</text>
-
-    <!-- deploy-mode note -->
-    <text x="344" y="132" text-anchor="middle" fill="#7a3d00" font-size="9" font-style="italic">
-      <tspan class="svgfr">deploy-mode: client &mdash; driver dans le JVM Livy</tspan>
-      <tspan class="svgen">deploy-mode: client &mdash; driver runs in Livy JVM</tspan>
-    </text>
-
-    <!-- Session 1 -->
-    <rect x="263" y="143" width="163" height="38" rx="5" fill="#ffe8c2" stroke="#f77f00" stroke-width="1"/>
-    <text x="344" y="160" text-anchor="middle" fill="#7a3d00" font-size="10" font-weight="bold">Session 1 &mdash; Spark Driver</text>
-    <text x="344" y="174" text-anchor="middle" fill="#888" font-size="8.5" font-family="Consolas,monospace">spark.driver.memory = 1g (default)</text>
-
-    <!-- Session 2 -->
-    <rect x="263" y="188" width="163" height="38" rx="5" fill="#ffe8c2" stroke="#f77f00" stroke-width="1"/>
-    <text x="344" y="205" text-anchor="middle" fill="#7a3d00" font-size="10" font-weight="bold">Session 2 &mdash; Spark Driver</text>
-    <text x="344" y="219" text-anchor="middle" fill="#888" font-size="8.5" font-family="Consolas,monospace">spark.driver.memory = 1g (default)</text>
-
-    <!-- Session N (dashed) -->
-    <rect x="263" y="233" width="163" height="38" rx="5" fill="#fff4e0" stroke="#f77f00" stroke-width="1" stroke-dasharray="4,2"/>
-    <text x="344" y="250" text-anchor="middle" fill="#7a3d00" font-size="10">
-      <tspan class="svgfr">Session N &middot;&middot;&middot; (max&nbsp;20)</tspan>
-      <tspan class="svgen">Session N &middot;&middot;&middot; (max&nbsp;20)</tspan>
-    </text>
-    <text x="344" y="264" text-anchor="middle" fill="#aaa" font-size="8.5">
-      <tspan class="svgfr">limit&eacute; par livy.server.session.max-creation</tspan>
-      <tspan class="svgen">capped by livy.server.session.max-creation</tspan>
-    </text>
-
-    <!-- separator -->
-    <line x1="263" y1="283" x2="426" y2="283" stroke="#f5c070" stroke-width="1"/>
-
-    <!-- Livy config params -->
-    <text x="344" y="298" text-anchor="middle" fill="#f77f00" font-size="9.5" font-style="italic">
-      <tspan class="svgfr">Cycle de vie des sessions :</tspan>
-      <tspan class="svgen">Session lifecycle:</tspan>
-    </text>
-    <text x="263" y="313" fill="#888" font-size="8.5" font-family="Consolas,monospace"># livy.conf</text>
-    <text x="263" y="328" fill="#333" font-size="9.5" font-family="Consolas,monospace">max-creation</text>
-    <text x="426" y="328" text-anchor="end" fill="#1a7a4a" font-size="9.5" font-family="Consolas,monospace">= 20</text>
-    <text x="263" y="343" fill="#333" font-size="9.5" font-family="Consolas,monospace">session.timeout</text>
-    <text x="426" y="343" text-anchor="end" fill="#1a7a4a" font-size="9.5" font-family="Consolas,monospace">= 1h</text>
-    <text x="263" y="358" fill="#333" font-size="9.5" font-family="Consolas,monospace">state-retain.sec</text>
-    <text x="426" y="358" text-anchor="end" fill="#1a7a4a" font-size="9.5" font-family="Consolas,monospace">= 300</text>
-
-    <!-- separator 2 -->
-    <line x1="263" y1="372" x2="426" y2="372" stroke="#f5c070" stroke-width="1"/>
-
-    <!-- spark backend -->
-    <text x="344" y="387" text-anchor="middle" fill="#f77f00" font-size="9.5" font-style="italic">
-      <tspan class="svgfr">Backend Spark :</tspan>
-      <tspan class="svgen">Spark backend:</tspan>
-    </text>
-    <text x="263" y="402" fill="#888" font-size="8.5" font-family="Consolas,monospace"># livy.conf</text>
-    <text x="263" y="417" fill="#333" font-size="9.5" font-family="Consolas,monospace">spark.master</text>
-    <text x="263" y="435" fill="#1a7a4a" font-size="9" font-family="Consolas,monospace">  spark://spark-master:7077</text>
-    <text x="263" y="451" fill="#333" font-size="9.5" font-family="Consolas,monospace">deploy-mode</text>
-    <text x="426" y="451" text-anchor="end" fill="#1a7a4a" font-size="9.5" font-family="Consolas,monospace">= client</text>
-    <text x="263" y="469" fill="#333" font-size="9.5" font-family="Consolas,monospace">enable-hive-context</text>
-    <text x="426" y="469" text-anchor="end" fill="#1a7a4a" font-size="9.5" font-family="Consolas,monospace">= true</text>
-
-    <!-- ═══════════════════════════════════════
-         ARROW 2: Livy -> Workers (branching)
-         ═══════════════════════════════════════ -->
-    <!-- horizontal from Livy -->
-    <line x1="437" y1="272" x2="459" y2="272" stroke="#555" stroke-width="1.5"/>
-    <!-- vertical distribution spine -->
-    <line x1="459" y1="92"  x2="459" y2="452" stroke="#555" stroke-width="1.5"/>
-    <!-- branch arrows into each worker -->
-    <line x1="459" y1="92"  x2="481" y2="92"  stroke="#555" stroke-width="1.5" marker-end="url(#arw)"/>
-    <line x1="459" y1="272" x2="481" y2="272" stroke="#555" stroke-width="1.5" marker-end="url(#arw)"/>
-    <line x1="459" y1="452" x2="481" y2="452" stroke="#555" stroke-width="1.5" marker-end="url(#arw)"/>
-    <!-- label -->
-    <text x="469" y="263" text-anchor="middle" fill="#555" font-size="8.5">Spark</text>
-    <text x="469" y="275" text-anchor="middle" fill="#555" font-size="8.5">RPC</text>
-
-    <!-- ═══════════════════════════════════════
-         ZONE 3a — Worker Node 1
-         ═══════════════════════════════════════ -->
-    <rect x="483" y="10"  width="462" height="164" rx="7" fill="#f8f5ff" stroke="#7b2d8b" stroke-width="1.5"/>
-    <rect x="483" y="10"  width="462" height="23"  rx="7" fill="#7b2d8b"/>
-    <rect x="483" y="25"  width="462" height="8"   fill="#7b2d8b"/>
-    <text x="714" y="27" text-anchor="middle" fill="white" font-size="10" font-weight="bold">
-      <tspan class="svgfr">N&#339;ud Worker 1 &nbsp;&#183;&nbsp; SPARK_WORKER_MEMORY=2G &nbsp;&#183;&nbsp; SPARK_WORKER_CORES=2</tspan>
-      <tspan class="svgen">Worker Node 1 &nbsp;&#183;&nbsp; SPARK_WORKER_MEMORY=2G &nbsp;&#183;&nbsp; SPARK_WORKER_CORES=2</tspan>
-    </text>
-    <!-- Executor box W1 -->
-    <rect x="493" y="42" width="115" height="122" rx="6" fill="#2a9d8f"/>
-    <text x="550" y="61"  text-anchor="middle" fill="white" font-size="10" font-weight="bold">Spark Executor</text>
-    <line x1="493" y1="66" x2="608" y2="66" stroke="rgba(255,255,255,0.3)" stroke-width="1"/>
-    <text x="550" y="81"  text-anchor="middle" fill="rgba(255,255,255,0.9)" font-size="9">
-      <tspan class="svgfr">M&eacute;moire Conteneur</tspan>
-      <tspan class="svgen">Container Memory</tspan>
-    </text>
-    <text x="550" y="100" text-anchor="middle" fill="white" font-size="22" font-weight="bold">~1 GB</text>
-    <text x="550" y="117" text-anchor="middle" fill="rgba(255,255,255,0.85)" font-size="8.5" font-family="Consolas,monospace">executor.memory</text>
-    <text x="550" y="130" text-anchor="middle" fill="rgba(255,255,255,0.85)" font-size="8.5" font-family="Consolas,monospace">+ memoryOverhead</text>
-    <text x="550" y="148" text-anchor="middle" fill="rgba(255,255,255,0.85)" font-size="8.5" font-family="Consolas,monospace">executor.cores = 2</text>
-    <!-- Memory breakdown W1 -->
-    <text x="618" y="55"  fill="#555" font-size="9"   font-family="Consolas,monospace">
-      <tspan class="svgfr">R&eacute;partition m&eacute;moire de l&rsquo;ex&eacute;cuteur :</tspan>
-      <tspan class="svgen">Executor Memory Layout:</tspan>
-    </text>
-    <text x="628" y="70"  fill="#333" font-size="9"   font-family="Consolas,monospace">spark.executor.memory     =  1g</text>
-    <text x="638" y="83"  fill="#777" font-size="8.5" font-family="Consolas,monospace">+ Reserved Memory (fixed)  = 300 MB</text>
-    <text x="638" y="96"  fill="#777" font-size="8.5" font-family="Consolas,monospace">+ User Memory      (40%)   = ~290 MB</text>
-    <text x="638" y="109" fill="#777" font-size="8.5" font-family="Consolas,monospace">+ Unified Pool     (60%)   = ~434 MB</text>
-    <text x="648" y="120" fill="#aaa" font-size="8"   font-family="Consolas,monospace">Storage Memory    (50%)  = ~217 MB</text>
-    <text x="648" y="131" fill="#aaa" font-size="8"   font-family="Consolas,monospace">Exec. Memory      (50%)  = ~217 MB</text>
-    <text x="628" y="147" fill="#333" font-size="9"   font-family="Consolas,monospace">spark.executor.memoryOverhead = ~102 MB</text>
-    <text x="628" y="160" fill="#888" font-size="8.5" font-family="Consolas,monospace">spark.memory.fraction = 0.6  (default)</text>
-    <text x="935" y="169" text-anchor="end" fill="#bbb" font-size="8">&#128196; spark-defaults.conf &nbsp;/&nbsp; docker-compose.yml</text>
-
-    <!-- ═══════════════════════════════════════
-         ZONE 3b — Worker Node 2
-         ═══════════════════════════════════════ -->
-    <rect x="483" y="190" width="462" height="164" rx="7" fill="#f8f5ff" stroke="#7b2d8b" stroke-width="1.5"/>
-    <rect x="483" y="190" width="462" height="23"  rx="7" fill="#7b2d8b"/>
-    <rect x="483" y="205" width="462" height="8"   fill="#7b2d8b"/>
-    <text x="714" y="207" text-anchor="middle" fill="white" font-size="10" font-weight="bold">
-      <tspan class="svgfr">N&#339;ud Worker 2 &nbsp;&#183;&nbsp; SPARK_WORKER_MEMORY=2G &nbsp;&#183;&nbsp; SPARK_WORKER_CORES=2</tspan>
-      <tspan class="svgen">Worker Node 2 &nbsp;&#183;&nbsp; SPARK_WORKER_MEMORY=2G &nbsp;&#183;&nbsp; SPARK_WORKER_CORES=2</tspan>
-    </text>
-    <!-- Executor box W2 -->
-    <rect x="493" y="222" width="115" height="122" rx="6" fill="#2a9d8f"/>
-    <text x="550" y="241" text-anchor="middle" fill="white" font-size="10" font-weight="bold">Spark Executor</text>
-    <line x1="493" y1="246" x2="608" y2="246" stroke="rgba(255,255,255,0.3)" stroke-width="1"/>
-    <text x="550" y="261" text-anchor="middle" fill="rgba(255,255,255,0.9)" font-size="9">
-      <tspan class="svgfr">M&eacute;moire Conteneur</tspan>
-      <tspan class="svgen">Container Memory</tspan>
-    </text>
-    <text x="550" y="280" text-anchor="middle" fill="white" font-size="22" font-weight="bold">~1 GB</text>
-    <text x="550" y="297" text-anchor="middle" fill="rgba(255,255,255,0.85)" font-size="8.5" font-family="Consolas,monospace">executor.memory</text>
-    <text x="550" y="310" text-anchor="middle" fill="rgba(255,255,255,0.85)" font-size="8.5" font-family="Consolas,monospace">+ memoryOverhead</text>
-    <text x="550" y="328" text-anchor="middle" fill="rgba(255,255,255,0.85)" font-size="8.5" font-family="Consolas,monospace">executor.cores = 2</text>
-    <!-- Memory breakdown W2 (same as W1 — same config applied uniformly) -->
-    <text x="618" y="235" fill="#555" font-size="9"   font-family="Consolas,monospace">
-      <tspan class="svgfr">R&eacute;partition m&eacute;moire de l&rsquo;ex&eacute;cuteur :</tspan>
-      <tspan class="svgen">Executor Memory Layout:</tspan>
-    </text>
-    <text x="628" y="250" fill="#333" font-size="9"   font-family="Consolas,monospace">spark.executor.memory     =  1g</text>
-    <text x="638" y="263" fill="#777" font-size="8.5" font-family="Consolas,monospace">+ Reserved Memory (fixed)  = 300 MB</text>
-    <text x="638" y="276" fill="#777" font-size="8.5" font-family="Consolas,monospace">+ User Memory      (40%)   = ~290 MB</text>
-    <text x="638" y="289" fill="#777" font-size="8.5" font-family="Consolas,monospace">+ Unified Pool     (60%)   = ~434 MB</text>
-    <text x="648" y="300" fill="#aaa" font-size="8"   font-family="Consolas,monospace">Storage Memory    (50%)  = ~217 MB</text>
-    <text x="648" y="311" fill="#aaa" font-size="8"   font-family="Consolas,monospace">Exec. Memory      (50%)  = ~217 MB</text>
-    <text x="628" y="327" fill="#333" font-size="9"   font-family="Consolas,monospace">spark.executor.memoryOverhead = ~102 MB</text>
-    <text x="628" y="340" fill="#888" font-size="8.5" font-family="Consolas,monospace">spark.memory.fraction = 0.6  (default)</text>
-
-    <!-- ═══════════════════════════════════════
-         ZONE 3c — Worker Node N (scalable, dashed)
-         ═══════════════════════════════════════ -->
-    <rect x="483" y="370" width="462" height="165" rx="7" fill="#f8f5ff" stroke="#7b2d8b" stroke-width="1.5" stroke-dasharray="6,3"/>
-    <rect x="483" y="370" width="462" height="23"  rx="7" fill="#a06aab"/>
-    <rect x="483" y="385" width="462" height="8"   fill="#a06aab"/>
-    <text x="714" y="387" text-anchor="middle" fill="white" font-size="10" font-weight="bold">
-      <tspan class="svgfr">N&#339;ud Worker N &nbsp;&#183;&nbsp; docker compose up --scale spark-worker=N</tspan>
-      <tspan class="svgen">Worker Node N &nbsp;&#183;&nbsp; docker compose up --scale spark-worker=N</tspan>
-    </text>
-    <!-- Faded executor box for WN -->
-    <rect x="493" y="402" width="115" height="122" rx="6" fill="#5ab8ac" opacity="0.75"/>
-    <text x="550" y="432" text-anchor="middle" fill="white" font-size="26" font-weight="bold" opacity="0.8">&middot;&middot;&middot;</text>
-    <text x="550" y="460" text-anchor="middle" fill="rgba(255,255,255,0.9)" font-size="9">
-      <tspan class="svgfr">m&ecirc;me config</tspan>
-      <tspan class="svgen">same config</tspan>
-    </text>
-    <text x="550" y="476" text-anchor="middle" fill="rgba(255,255,255,0.9)" font-size="9">
-      <tspan class="svgfr">appliqu&eacute;e</tspan>
-      <tspan class="svgen">applied</tspan>
-    </text>
-    <text x="550" y="496" text-anchor="middle" fill="rgba(255,255,255,0.8)" font-size="8.5" font-family="Consolas,monospace">spark-defaults.conf</text>
-    <!-- Note for WN -->
-    <text x="618" y="420" fill="#555" font-size="9.5" font-family="Consolas,monospace">
-      <tspan class="svgfr">Tous les workers partagent la m&ecirc;me config.</tspan>
-      <tspan class="svgen">All workers share the same configuration.</tspan>
-    </text>
-    <text x="618" y="436" fill="#555" font-size="9.5" font-family="Consolas,monospace">
-      <tspan class="svgfr">Les executors sont allou&eacute;s dynamiquement.</tspan>
-      <tspan class="svgen">Executors are allocated dynamically per job.</tspan>
-    </text>
-    <text x="618" y="462" fill="#555" font-size="9"   font-family="Consolas,monospace">
-      <tspan class="svgfr">&#9654; Pour optimiser davantage :</tspan>
-      <tspan class="svgen">&#9654; To scale out:</tspan>
-    </text>
-    <text x="618" y="476" fill="#333" font-size="8.5" font-family="Consolas,monospace">  docker compose up</text>
-    <text x="618" y="490" fill="#333" font-size="8.5" font-family="Consolas,monospace">    --scale spark-worker=N</text>
-    <text x="618" y="510" fill="#aaa" font-size="8.5" font-family="Consolas,monospace">
-      <tspan class="svgfr">&#9654; File YARN (admin cluster) pour la priorit&eacute;</tspan>
-      <tspan class="svgen">&#9654; YARN queue (cluster admin) for priority tiers</tspan>
-    </text>
-  </svg>
-
-</div>
-<!-- end memory section -->
-
-  <!-- outer flex: left column + right columns -->
-  <div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;">
-
-    <!-- ── LEFT: K8s Pod + Livy Driver ── -->
-    <div style="display:flex;flex-direction:column;gap:14px;flex:0 0 200px;">
-
-      <!-- K8s Notebook Pod -->
-      <div style="background:#fff;border:2px solid #4361ee;border-radius:10px;padding:12px 14px;">
-        <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#4361ee;margin-bottom:6px;">
-          <span data-lang="fr">Pod Notebook (K8s)</span>
-          <span data-lang="en">Notebook Pod (K8s)</span>
-        </div>
-        <div style="background:#eef0ff;border-radius:6px;padding:8px 10px;font-size:12px;color:#1a2070;font-weight:600;text-align:center;">
-          <span data-lang="fr">M&eacute;moire Pod</span>
-          <span data-lang="en">Pod Memory</span><br>
-          <span style="font-size:18px;font-weight:700;">4 GB</span>
-        </div>
-        <div style="margin-top:8px;">
-          <div style="background:#dce3ff;border-radius:4px;padding:5px 8px;font-size:11px;color:#333;margin-bottom:4px;">
-            <span style="color:#f77f00;font-weight:700;">&#9654;</span>
-            <code>resources.limits.memory</code>
-          </div>
-          <div style="background:#dce3ff;border-radius:4px;padding:5px 8px;font-size:11px;color:#333;">
-            <span style="color:#f77f00;font-weight:700;">&#9654;</span>
-            <code>resources.requests.memory</code>
-          </div>
-        </div>
-        <div style="font-size:10px;color:#999;margin-top:6px;">
-          <span data-lang="fr">helm-values.yaml</span>
-          <span data-lang="en">helm-values.yaml</span>
-        </div>
-      </div>
-
-      <!-- Arrow between boxes -->
-      <div style="text-align:center;font-size:20px;color:#aaa;line-height:1;">&#8595;</div>
-
-      <!-- Livy Edge Node - Driver -->
-      <div style="background:#fff;border:2px solid #f77f00;border-radius:10px;padding:12px 14px;">
-        <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#f77f00;margin-bottom:6px;">
-          <span data-lang="fr">N&oelig;ud Edge &mdash; Livy</span>
-          <span data-lang="en">Edge Node &mdash; Livy</span>
-        </div>
-        <div style="background:#fff4e0;border-radius:6px;padding:8px 10px;font-size:12px;color:#7a3d00;font-weight:600;text-align:center;">
-          <span data-lang="fr">Spark Driver (JVM)</span>
-          <span data-lang="en">Spark Driver (JVM)</span><br>
-          <span style="font-size:18px;font-weight:700;">4 GB</span>
-        </div>
-        <div style="margin-top:8px;">
-          <div style="background:#ffe8c2;border-radius:4px;padding:5px 8px;font-size:11px;color:#333;margin-bottom:4px;">
-            <span style="color:#f77f00;font-weight:700;">&#9654;</span>
-            <code>spark.driver.memory</code>
-          </div>
-          <div style="background:#ffe8c2;border-radius:4px;padding:5px 8px;font-size:11px;color:#333;margin-bottom:4px;">
-            <span style="color:#f77f00;font-weight:700;">&#9654;</span>
-            <code>spark.driver.memoryOverhead</code>
-          </div>
-          <div style="background:#ffe8c2;border-radius:4px;padding:5px 8px;font-size:11px;color:#333;">
-            <span style="color:#e63946;font-weight:700;">&#9632;</span>
-            <span data-lang="fr">Max sessions simultan&eacute;es</span>
-            <span data-lang="en">Max concurrent sessions</span>
-          </div>
-        </div>
-        <div style="font-size:10px;color:#999;margin-top:6px;">
-          <span data-lang="fr">livy.conf &amp; spark-defaults</span>
-          <span data-lang="en">livy.conf &amp; spark-defaults</span>
-        </div>
-      </div>
-
-    </div><!-- end left column -->
-
-    <!-- ── MIDDLE: YARN Container arrow ── -->
-    <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;flex:0 0 90px;align-self:center;gap:6px;">
-      <div style="background:#1e3a5f;color:white;border-radius:8px;padding:8px 10px;font-size:10px;font-weight:700;text-align:center;line-height:1.4;">
-        YARN<br>
-        <span data-lang="fr">Gestionnaire<br>de ressources</span>
-        <span data-lang="en">Resource<br>Manager</span>
-      </div>
-      <div style="font-size:13px;color:#aaa;">&#8595;</div>
-      <div style="background:#f5edff;border:1px solid #7b2d8b;border-radius:6px;padding:6px 8px;font-size:10px;font-weight:600;color:#4a0072;text-align:center;">
-        <span data-lang="fr">Soumission<br>de jobs<br>Spark RPC</span>
-        <span data-lang="en">Job<br>Submission<br>Spark RPC</span>
-      </div>
-      <div style="font-size:20px;color:#aaa;">&#8594;</div>
-    </div>
-
-    <!-- ── RIGHT: Worker Nodes ── -->
-    <div style="display:flex;flex-direction:column;gap:12px;flex:1;min-width:340px;">
-
-      <!-- Worker node template (repeat 3x) -->
-      <!-- Node 1 -->
-      <div style="background:#fff;border:2px solid #7b2d8b;border-radius:10px;padding:12px 14px;">
-        <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#7b2d8b;margin-bottom:8px;">
-          <span data-lang="fr">N&oelig;ud Worker 1</span>
-          <span data-lang="en">Worker Node 1</span>
-        </div>
-        <div style="display:flex;gap:10px;align-items:stretch;">
-          <!-- Executor container box -->
-          <div style="background:#2a9d8f;border-radius:8px;padding:8px 12px;color:white;font-size:12px;font-weight:700;text-align:center;min-width:110px;display:flex;flex-direction:column;justify-content:center;">
-            <span data-lang="fr">Conteneur Executor<br>YARN</span>
-            <span data-lang="en">YARN Executor<br>Container</span>
-            <div style="font-size:20px;font-weight:800;margin-top:4px;">8 GB</div>
-            <div style="font-size:9px;opacity:0.85;margin-top:2px;"><code style="background:rgba(255,255,255,0.25);border-radius:3px;padding:1px 4px;">spark.executor.memory<br>+ overhead</code></div>
-          </div>
-          <!-- Memory breakdown -->
-          <div style="flex:1;display:flex;flex-direction:column;gap:3px;font-size:11px;">
-            <div style="background:#e8f5e9;border-left:3px solid #2a9d8f;border-radius:0 4px 4px 0;padding:3px 8px;">
-              <span style="color:#f77f00;font-weight:700;">&#9654;</span> <code>spark.executor.memory</code> = <strong>6.4 GB</strong>
-              <div style="color:#777;font-size:10px;padding-left:14px;">
-                <span data-lang="fr">dont pool unifi&eacute; (ex&eacute;cution + stockage) = 60%</span>
-                <span data-lang="en">incl. unified pool (execution + storage) = 60%</span>
-              </div>
-            </div>
-            <div style="background:#fff3cd;border-left:3px solid #f77f00;border-radius:0 4px 4px 0;padding:3px 8px;">
-              <span style="color:#f77f00;font-weight:700;">&#9654;</span> <code>spark.executor.memoryOverhead</code> = <strong>1.3 GB</strong>
-            </div>
-            <div style="background:#f5edff;border-left:3px solid #7b2d8b;border-radius:0 4px 4px 0;padding:3px 8px;">
-              <span style="color:#888;">&#9632;</span>
-              <span data-lang="fr">M&eacute;moire r&eacute;serv&eacute;e (fixe)</span>
-              <span data-lang="en">Reserved Memory (fixed)</span>
-              = <strong>300 MB</strong>
-            </div>
-            <div style="background:#fce4ec;border-left:3px solid #e63946;border-radius:0 4px 4px 0;padding:3px 8px;">
-              <span style="color:#f77f00;font-weight:700;">&#9654;</span> <code>spark.executor.cores</code> = <strong>2</strong>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Node 2 -->
-      <div style="background:#fff;border:2px solid #7b2d8b;border-radius:10px;padding:12px 14px;">
-        <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#7b2d8b;margin-bottom:8px;">
-          <span data-lang="fr">N&oelig;ud Worker 2</span>
-          <span data-lang="en">Worker Node 2</span>
-        </div>
-        <div style="display:flex;gap:10px;align-items:stretch;">
-          <div style="background:#2a9d8f;border-radius:8px;padding:8px 12px;color:white;font-size:12px;font-weight:700;text-align:center;min-width:110px;display:flex;flex-direction:column;justify-content:center;">
-            <span data-lang="fr">Conteneur Executor<br>YARN</span>
-            <span data-lang="en">YARN Executor<br>Container</span>
-            <div style="font-size:20px;font-weight:800;margin-top:4px;">8 GB</div>
-            <div style="font-size:9px;opacity:0.85;margin-top:2px;"><code style="background:rgba(255,255,255,0.25);border-radius:3px;padding:1px 4px;">spark.executor.memory<br>+ overhead</code></div>
-          </div>
-          <div style="flex:1;display:flex;flex-direction:column;gap:3px;font-size:11px;">
-            <div style="background:#e8f5e9;border-left:3px solid #2a9d8f;border-radius:0 4px 4px 0;padding:3px 8px;">
-              <span style="color:#f77f00;font-weight:700;">&#9654;</span> <code>spark.executor.memory</code> = <strong>6.4 GB</strong>
-              <div style="color:#777;font-size:10px;padding-left:14px;">
-                <span data-lang="fr">dont pool unifi&eacute; (ex&eacute;cution + stockage) = 60%</span>
-                <span data-lang="en">incl. unified pool (execution + storage) = 60%</span>
-              </div>
-            </div>
-            <div style="background:#fff3cd;border-left:3px solid #f77f00;border-radius:0 4px 4px 0;padding:3px 8px;">
-              <span style="color:#f77f00;font-weight:700;">&#9654;</span> <code>spark.executor.memoryOverhead</code> = <strong>1.3 GB</strong>
-            </div>
-            <div style="background:#f5edff;border-left:3px solid #7b2d8b;border-radius:0 4px 4px 0;padding:3px 8px;">
-              <span style="color:#888;">&#9632;</span>
-              <span data-lang="fr">M&eacute;moire r&eacute;serv&eacute;e (fixe)</span>
-              <span data-lang="en">Reserved Memory (fixed)</span>
-              = <strong>300 MB</strong>
-            </div>
-            <div style="background:#fce4ec;border-left:3px solid #e63946;border-radius:0 4px 4px 0;padding:3px 8px;">
-              <span style="color:#f77f00;font-weight:700;">&#9654;</span> <code>spark.executor.cores</code> = <strong>2</strong>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Node N -->
-      <div style="background:#fff;border:2px dashed #7b2d8b;border-radius:10px;padding:12px 14px;opacity:0.75;">
-        <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#7b2d8b;margin-bottom:8px;">
-          <span data-lang="fr">N&oelig;ud Worker &hellip; (scalable)</span>
-          <span data-lang="en">Worker Node &hellip; (scalable)</span>
-        </div>
-        <div style="display:flex;gap:10px;align-items:center;">
-          <div style="background:#2a9d8f;border-radius:8px;padding:8px 12px;color:white;font-size:12px;font-weight:700;text-align:center;min-width:110px;">
-            <span data-lang="fr">Conteneur Executor<br>YARN</span>
-            <span data-lang="en">YARN Executor<br>Container</span>
-            <div style="font-size:20px;font-weight:800;margin-top:4px;">8 GB</div>
-          </div>
-          <div style="font-size:12px;color:#aaa;text-align:center;flex:1;">
-            <span data-lang="fr">Identical &agrave; ci-dessus &mdash; m&ecirc;mes param&egrave;tres appliqu&eacute;s<br>via <code>spark-defaults.conf</code></span>
-            <span data-lang="en">Same layout &mdash; same parameters applied<br>via <code>spark-defaults.conf</code></span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Legend -->
-      <div style="background:#fff;border-radius:8px;padding:10px 14px;box-shadow:0 1px 6px rgba(0,0,0,0.07);font-size:11px;display:flex;gap:18px;flex-wrap:wrap;">
-        <span><span style="color:#f77f00;font-weight:700;">&#9654;</span>
-          <span data-lang="fr">Param&egrave;tre configurable dans <code>spark-defaults.conf</code></span>
-          <span data-lang="en">Tuneable parameter in <code>spark-defaults.conf</code></span>
-        </span>
-        <span><span style="color:#888;">&#9632;</span>
-          <span data-lang="fr">Valeur fixe JVM (non modifiable)</span>
-          <span data-lang="en">Fixed JVM value (not tuneable)</span>
-        </span>
-        <span><span style="color:#e63946;font-weight:700;">&#9632;</span>
-          <span data-lang="fr">Param&egrave;tre de calcul (parall&eacute;lisme)</span>
-          <span data-lang="en">Compute tuning (parallelism)</span>
-        </span>
-      </div>
-
-</div>
 <!-- end memory section -->
 
 <p class="footnote" style="margin-top:48px;">learn-jupyterhub-with-livy &nbsp;&middot;&nbsp;
