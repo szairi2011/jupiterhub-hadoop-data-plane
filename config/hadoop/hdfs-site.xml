@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
+  hdfs-site.xml — HDFS-specific configuration (Phase 5).
+  Mounted into: namenode, datanode, livy, hive-metastore.
+  NOT needed by resourcemanager or nodemanager — YARN doesn't read HDFS blocks.
+
+  How HDFS stores your data in two parts:
+    NameNode  → the FILE SYSTEM INDEX: directory tree, which blocks belong to which
+                file, and which DataNodes hold each block.  No data bytes, only metadata.
+                Stored in the namenode-data Docker volume (fsimage + edit log).
+                Losing this = losing the entire file system (like losing a hard drive's
+                partition table).  Back it up before running `docker compose down -v`.
+
+    DataNode  → the ACTUAL BYTES: raw 128 MB block files (blk_XXXXXXXX) on disk.
+                One block here per 128 MB chunk of every Parquet/ORC/text file.
+                Stored in the datanode-data Docker volume.
+
+  Replication = how many DataNode copies of each block:
+    replication=1 → 1 copy; DataNode outage = unreadable blocks.
+    replication=2 → 2 copies; can lose 1 DataNode and still read everything.
+    replication=3 → production default; survives 2 simultaneous failures.
+-->
+<configuration>
+
+  <!-- How many DataNode replicas to keep per 128 MB block.
+       Two DataNodes (datanode-1 + datanode-2) allow replication=2:
+       one block copy on each node. Losing either DataNode leaves every
+       block readable from the surviving one. -->
+  <property>
+    <name>dfs.replication</name>
+    <value>2</value>
+  </property>
+
+  <!-- Where the NameNode persists its fsimage (full snapshot of the file tree)
+       and edit log (all changes since the last snapshot, written before ACK-ing
+       a client write — the HDFS equivalent of a WAL/journal).
+       Backed by the namenode-data Docker volume.  The entrypoint.sh format-guard
+       checks for VERSION in this directory to avoid re-formatting a live cluster. -->
+  <property>
+    <name>dfs.namenode.name.dir</name>
+    <value>file:///hadoop/dfs/name</value>
+  </property>
+
+  <!-- Where the DataNode stores raw block files.
+       Each 128 MB chunk of a Parquet file becomes one blk_XXXXXXXX file here.
+       Backed by the datanode-data Docker volume — persists across `compose down`
+       but wiped by `compose down -v`. -->
+  <property>
+    <name>dfs.datanode.data.dir</name>
+    <value>file:///hadoop/dfs/data</value>
+  </property>
+
+  <!-- Expose an HTTP REST API over HDFS (read/write/list files via curl or browser).
+       The NameNode Web UI at :9870 uses this internally.
+       phase5-init-hdfs.ps1 relies on it to verify the NameNode is ready. -->
+  <property>
+    <name>dfs.webhdfs.enabled</name>
+    <value>true</value>
+  </property>
+
+  <!-- Skip Unix permission checks on HDFS paths.
+       Lets root/hive/alice all read-write the same warehouse dir without chmod/chown.
+       Phase 6 re-enables this — Kerberos identity becomes the file owner. -->
+  <property>
+    <name>dfs.permissions.enabled</name>
+    <value>false</value>
+  </property>
+
+  <!-- Bind Web UI on 0.0.0.0 so host browser can reach http://localhost:9870.
+       Default is 127.0.0.1 which is only reachable inside the container. -->
+  <property>
+    <name>dfs.namenode.http-address</name>
+    <value>0.0.0.0:9870</value>
+  </property>
+
+  <!-- Same reason — expose DataNode status/metrics page to the host.
+       Reachable via the NameNode UI > DataNodes tab > "http" link per node. -->
+  <property>
+    <name>dfs.datanode.http.address</name>
+    <value>0.0.0.0:9864</value>
+  </property>
+
+</configuration>

@@ -37,14 +37,13 @@
 
   <!-- ======================================================================
        Warehouse directory
-       Shared Docker volume (hive-warehouse) mounted at the same path in
-       both hive-metastore and spark-worker, so executors can write data
-       while HMS records the table metadata.
-       In production: replace with hdfs:///user/hive/warehouse
+       Phase 5: warehouse moves from a Docker volume to HDFS.
+       Run scripts/phase5-init-hdfs.ps1 once to create this directory.
+       Phase 3 baseline was: file:///opt/hive/data/warehouse (Docker volume).
        ====================================================================== -->
   <property>
     <name>hive.metastore.warehouse.dir</name>
-    <value>/opt/hive/data/warehouse</value>
+    <value>hdfs://namenode:9000/user/hive/warehouse</value>
   </property>
 
   <!-- ======================================================================

@@ -1,5 +1,5 @@
 # phase4-up.ps1
-# Full Phase 4 bootstrap — idempotent, safe to re-run.
+# K8s control-plane bootstrap (Phase 5) — idempotent, safe to re-run.
 #
 # What it does:
 #   1. Creates a kind cluster named "jhub" (skips if it already exists)
@@ -12,12 +12,12 @@
 #   winget install Helm.Helm
 #   winget install Kubernetes.kubectl
 #
-# Usage:
+# Usage (standalone — data plane must already be running):
 #   .\scripts\phase4-up.ps1
 #
+# Preferred: use start-all.ps1 to bring up both planes together.
 # JupyterHub will be available at http://localhost:8001 once the hub Pod is Ready.
-# The Spark/Livy/HMS stack must still be started separately:
-#   docker compose up -d
+# The Hadoop/Livy/HMS stack must be running first (start-all.ps1 handles this).
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -78,7 +78,7 @@ Start-Sleep -Seconds 1
 # Quick sanity check — make sure the proxy reaches Livy.
 $probe = docker exec $kindNode curl -s --max-time 3 http://127.0.0.1:8998/sessions
 if ($probe -notmatch '"sessions"') { throw "socat proxy is not forwarding to Livy. Is the compose stack running?" }
-Write-Host "==> socat proxy verified — Livy reachable via kind node."
+Write-Host "==> socat proxy verified - Livy reachable via kind node."
 
 # Get the node IP via bash inside the container — avoids Go-template double-quote quoting
 # issues on Windows (which cause 'docker inspect --format' to fail with non-zero exit code).
@@ -133,10 +133,11 @@ Write-Host "==> Applying ConfigMaps..."
 # Done
 # ---------------------------------------------------------------------------
 Write-Host ""
-Write-Host "==> Phase 4 is up."
-Write-Host "    JupyterHub : http://localhost:8001  (login: alice / sparkmagic)"
-Write-Host "    Spark UI   : http://localhost:8080  (docker compose stack)"
-Write-Host "    Livy REST  : http://localhost:8998/sessions"
+Write-Host "==> Stack is up (Phase 5 - YARN + HDFS)."
+Write-Host "    JupyterHub        : http://localhost:8001  (login: alice / sparkmagic)"
+Write-Host "    YARN ResourceMgr  : http://localhost:8088"
+Write-Host "    HDFS NameNode     : http://localhost:9870"
+Write-Host "    Livy REST         : http://localhost:8998/sessions"
 Write-Host ""
 Write-Host "    To watch hub Pod come up:"
 Write-Host "      kubectl get pods -n $namespace -w"

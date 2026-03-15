@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
+  capacity-scheduler.xml — YARN job queue definitions (Phase 5).
+  Mounted into: resourcemanager ONLY (the scheduler runs inside the RM process).
+
+  WHAT IS THE CAPACITY SCHEDULER?  (layman's terms)
+  ────────────────────────────────────────────────────
+  Imagine a shared printer at an office.  Everyone sends print jobs and they queue up.
+  The CapacityScheduler is the queue manager for cluster RAM and CPU:
+    - You carve the cluster into named "queues", each guaranteed a % of total resources.
+    - Teams submit their Spark jobs to their own queue.
+    - Each team's jobs are guaranteed their slice even under heavy load.
+    - If a team's queue is idle, other teams can "burst" into that spare capacity.
+
+  Example (Phase 7):
+    data-engineering:  60%  guaranteed  (can burst to 80%)
+    data-science:      40%  guaranteed  (can burst to 100%)
+
+  WHY THIS FILE IS MANDATORY:
+  ───────────────────────────
+  Hadoop 3.x defaults to CapacityScheduler.  The RM will NOT start unless at
+  least one child queue under "root" is declared with capacity=100.
+  Without this file you get:
+    "Queue configuration missing child queue names for root"
+  and the ResourceManager container exits immediately.
+
+  PHASE 5: one queue, 100% capacity, everyone shares everything.
+  Phase 7 will split this into per-team queues with preemption + priorities.
+-->
+<configuration>
+
+  <!-- "root" is the invisible top of the queue tree — all user queues branch from it.
+       Think of it like the root of a company org chart: you never submit jobs to root
+       directly, only to its children (leaf queues).
+       Here we declare a single child: "default". -->
+  <property>
+    <name>yarn.scheduler.capacity.root.queues</name>
+    <value>default</value>
+  </property>
+
+  <!-- Guaranteed capacity of the "default" queue as a % of root (= the whole cluster).
+       100% means every byte of RAM and every vCore is available to this queue.
+       In a multi-queue setup this would be e.g. 60 (leaving 40 for another queue). -->
+  <property>
+    <name>yarn.scheduler.capacity.root.default.capacity</name>
+    <value>100</value>
+  </property>
+
+  <!-- Elastic ceiling: the maximum % this queue can grow to when other queues are idle.
+       100% = this queue may consume the entire cluster if nothing else is running.
+       In a multi-queue config you'd set this above the guaranteed capacity (e.g. 80)
+       to allow borrowing from idle neighbours. -->
+  <property>
+    <name>yarn.scheduler.capacity.root.default.maximum-capacity</name>
+    <value>100</value>
+  </property>
+
+  <!-- Per-user elasticity: a multiplier on the queue's "minimum user limit".
+       1.0 means one user may use (capacity × 1) = 100% of the queue alone.
+       Set to 0.5 to prevent any single user from taking more than 50%,
+       forcing fair sharing when multiple users submit at the same time. -->
+  <property>
+    <name>yarn.scheduler.capacity.root.default.user-limit-factor</name>
+    <value>1</value>
+  </property>
+
+  <!-- RUNNING = this queue accepts new job submissions.
+       Set to STOPPED to drain the queue gracefully (existing jobs finish,
+       new submissions are rejected) — useful for zero-downtime queue migrations. -->
+  <property>
+    <name>yarn.scheduler.capacity.root.default.state</name>
+    <value>RUNNING</value>
+  </property>
+
+  <!-- Maximum fraction of cluster resources that can be used for Application Masters
+       (i.e. Spark drivers in deploy-mode=client / Livy sessions).
+       Default is 0.1 (10%) which with 2×4 GB NodeManagers = only 819 MB — not enough
+       for even one 1G driver.  0.5 allows up to 4 GB for AMs = 4 concurrent sessions
+       each with driverMemory=1G.  Raise further if you add more NodeManagers. -->
+  <property>
+    <name>yarn.scheduler.capacity.maximum-am-resource-percent</name>
+    <value>0.5</value>
+  </property>
+
+  <!-- "*" = any authenticated user may submit a job to this queue.
+       Phase 6 will restrict this to a named Unix group (e.g., "data-team"). -->
+  <property>
+    <name>yarn.scheduler.capacity.root.default.acl_submit_applications</name>
+    <value>*</value>
+  </property>
+
+  <!-- "*" = any authenticated user may kill jobs or change queue config at runtime.
+       In production this should be a dedicated "admins" group only. -->
+  <property>
+    <name>yarn.scheduler.capacity.root.default.acl_administer_queue</name>
+    <value>*</value>
+  </property>
+
+</configuration>

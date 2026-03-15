@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
+  yarn-site.xml — YARN (Yet Another Resource Negotiator) settings (Phase 5).
+  Mounted into: resourcemanager, nodemanager, livy (needs RM address to submit jobs).
+
+  YARN is the cluster's operating system — it decides which jobs run, on which
+  machines, with how much RAM and CPU.  Think of it as AWS Lambda + a task scheduler.
+
+  Two moving parts:
+    ResourceManager (RM)  — the single "traffic controller": accepts job submissions,
+                            tracks total cluster capacity, decides where to place containers.
+    NodeManager (NM)      — the "local agent" on every worker node: launches and monitors
+                            JVM containers (Spark executors) as directed by the RM.
+
+  How a Spark-on-YARN job flows:
+    1. Livy calls spark-submit  →  RM receives the application.
+    2. RM picks a NM with free RAM  →  launches the ApplicationMaster (a thin coordinator JVM).
+    3. AM negotiates executor containers from RM  →  RM assigns slots on NMs.
+    4. NMs launch executor JVMs  →  executors connect back to the Spark driver in Livy.
+
+  CRITICAL Docker gotcha (vmem/pmem checks):
+    A JVM running inside a Linux container reserves a large virtual address space
+    even when physically using very little memory.  YARN's default memory checks
+    measure virtual memory and immediately kill the container, thinking it OOM-ed.
+    Setting both checks to false lets Docker's own OOM killer be the safety net.
+-->
+<configuration>
+
+  <!-- All YARN clients (Livy, spark-submit) contact this hostname to find the RM.
+       "resourcemanager" is resolved by Docker DNS (matches container_name in compose). -->
+  <property>
+    <name>yarn.resourcemanager.hostname</name>
+    <value>resourcemanager</value>
+  </property>
+
+  <!-- Bind the RM Web UI on all interfaces so http://localhost:8088 works from the host.
+       Without 0.0.0.0 the UI binds only on the container's loopback and is unreachable. -->
+  <property>
+    <name>yarn.resourcemanager.webapp.address</name>
+    <value>0.0.0.0:8088</value>
+  </property>
+
+  <!-- Auxiliary services run as plugins inside every NodeManager.
+       mapreduce_shuffle serves intermediate shuffle data between Map and Reduce tasks.
+       Spark doesn't use this for its own shuffle (it has a native shuffle service),
+       but YARN requires at least one aux-service to be declared or executors fail
+       to register.  Harmless to declare even in a Spark-only cluster. -->
+  <property>
+    <name>yarn.nodemanager.aux-services</name>
+    <value>mapreduce_shuffle</value>
+  </property>
+  <property>
+    <name>yarn.nodemanager.aux-services.mapreduce_shuffle.class</name>
+    <value>org.apache.hadoop.mapred.ShuffleHandler</value>
+  </property>
+
+  <!-- CRITICAL: JVMs inside Linux cgroups/Docker always show a huge virtual memory
+       footprint (several GB) regardless of actual heap usage.  YARN's virtual-memory
+       check fires immediately and kills the executor before it does any work.
+       pmem check is also unreliable in containers — the OOM killer handles it instead. -->
+  <property>
+    <name>yarn.nodemanager.vmem-check-enabled</name>
+    <value>false</value>
+  </property>
+  <property>
+    <name>yarn.nodemanager.pmem-check-enabled</name>
+    <value>false</value>
+  </property>
+
+  <!-- Total RAM this NodeManager advertises to the ResourceManager.
+       YARN won't schedule more than this across all containers on this node.
+       4096 MB = 4 GB.  Reduce if your laptop struggles; increase on beefy machines.
+       With 1 executor at 1 GB + 512 MB ApplicationMaster, 4 GB supports ~3 concurrent sessions. -->
+  <property>
+    <name>yarn.nodemanager.resource.memory-mb</name>
+    <value>4096</value>
+  </property>
+
+  <!-- Total virtual cores this NM advertises.  YARN uses this for CPU-aware scheduling.
+       Set to your physical core count (or half to leave headroom for the OS and Docker). -->
+  <property>
+    <name>yarn.nodemanager.resource.cpu-vcores</name>
+    <value>4</value>
+  </property>
+
+  <!-- Floor for a single container allocation.  The Spark ApplicationMaster typically
+       requests 512 MB — this minimum prevents fragmentation from tiny allocations. -->
+  <property>
+    <name>yarn.scheduler.minimum-allocation-mb</name>
+    <value>512</value>
+  </property>
+
+  <!-- Ceiling for a single container.  Capped at total NM memory — you can't grant
+       more RAM to one container than the whole node has. -->
+  <property>
+    <name>yarn.scheduler.maximum-allocation-mb</name>
+    <value>4096</value>
+  </property>
+
+  <!-- Scratch space for running containers: downloaded JARs, spill files, shuffle data.
+       Ephemeral — cleared when the container exits.  Must be writable inside Docker. -->
+  <property>
+    <name>yarn.nodemanager.local-dirs</name>
+    <value>/tmp/nm-local-dir</value>
+  </property>
+
+  <!-- Where the NM writes each container's stdout/stderr logs.
+       Inspect with: docker exec nodemanager find /tmp/nm-logs -name "*.log" | head
+       Or via the ResourceManager UI: Applications > (app) > Logs. -->
+  <property>
+    <name>yarn.nodemanager.log-dirs</name>
+    <value>/tmp/nm-logs</value>
+  </property>
+
+  <!-- Environment variables inherited by every JVM the NM launches (executors, AM).
+       Without HADOOP_CONF_DIR in this list, executor JVMs can't find core-site.xml
+       and fail with "No FileSystem for scheme: hdfs" on the first HDFS read. -->
+  <property>
+    <name>yarn.nodemanager.env-whitelist</name>
+    <value>JAVA_HOME,HADOOP_COMMON_HOME,HADOOP_HDFS_HOME,HADOOP_CONF_DIR,CLASSPATH_PREPEND_DISTCACHE,HADOOP_YARN_HOME,HADOOP_HOME</value>
+  </property>
+
+</configuration>

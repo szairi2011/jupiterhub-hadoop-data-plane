@@ -1,69 +1,66 @@
-# Incremental PoC: JupyterHub → SparkMagic → Livy → Spark/YARN
+# Incremental PoC: JupyterHub → SparkMagic → Livy → Spark on YARN/HDFS
 # DummyAuthenticator (any user / password "sparkmagic") — dev only.
 #
-# Phase strategy: this single file grows with each phase.
-# Each validated phase is captured as a git tag:
-#   git checkout phase-1   → Phase 1 stack
-#   git checkout phase-2   → Phase 2 stack
-#   git checkout phase-3   → Phase 3 stack
-#   git checkout phase-4   → Phase 4 stack  (current)
-# To restore any snapshot:  git checkout phase-N && docker compose up --build
+# ─── ARCHITECTURE (Phase 5) ───────────────────────────────────────────────────
 #
-# Current phase: 4 — KubeSpawner (kind + Helm)
-# This Compose stack is the DATA PLANE only (Spark / Livy / HMS).
-# JupyterHub now runs inside a kind K8s cluster — see scripts/phase4-up.ps1.
+#   CONTROL PLANE (kind K8s cluster — managed by scripts/start-all.ps1)
+#     JupyterHub Pod  →  singleuser Pod (SparkMagic kernel)
+#                               │  HTTP POST /sessions, /statements
+#                               ▼
+#   DATA PLANE (this file)
+#     Livy :8998           ←── REST entry point; runs the Spark DRIVER
+#       │  spark-submit → YARN ResourceManager
+#       │                      │  schedules + launches executor JVMs
+#       │                      ▼
+#       │              nodemanager (executor containers)
+#       │  executor callbacks (TCP) back to driver in Livy
+#       │
+#       │  open(hdfs://namenode:9000/...)
+#       ▼
+#     namenode  ── block map ──►  datanode-1  datanode-2  (Parquet bytes, replication=2)
+#     hive-metastore :9083    ──► postgres  (table → HDFS path)
 #
-# Services:
-#   spark-master      (1)  Spark standalone master
-#   spark-worker      (1)  Spark worker (scale: --scale spark-worker=N)
-#   livy              (1)  Apache Livy REST server  ← reachable from kind via host.docker.internal:8998
-#   hive-metastore    (3)  Hive Metastore Thrift server
-#   postgres          (3)  HMS backing store
-#   singleuser        (2)  (build-only) image loaded into kind by phase4-up.ps1
+# ─── PHASE HISTORY ────────────────────────────────────────────────────────────
+# This single file has grown phase-by-phase.  Each validated phase is a git tag:
+#   git checkout phase-1  →  spark-master + spark-worker + livy + jupyter
+#   git checkout phase-2  →  + jupyterhub + DockerSpawner
+#   git checkout phase-3  →  + postgres + hive-metastore
+#   git checkout phase-4  →  + kind cluster (JupyterHub moves to K8s)
+#   current (phase-5)     →  spark standalone REMOVED; YARN+HDFS added
 #
-# Usage:
-#   docker compose up --build -d        # start data plane
-#   .\scripts\phase4-up.ps1             # create kind cluster + Helm deploy JupyterHub
-#   Open http://localhost:8001          # JupyterHub (KubeSpawner) — alice / sparkmagic
-#   Open http://localhost:8080          # Spark Master Web UI
-#   Open http://localhost:8998/sessions # Livy REST API
+# ─── SERVICES (phase introduced) ──────────────────────────────────────────────
+#   livy              (1)   Spark REST server → submits to YARN (Phase 5)
+#   hive-metastore    (3)   Thrift catalog server :9083 → table metadata
+#   postgres          (3)   HMS backing store (table DDL, partition info)
+#   singleuser        (2)   build-only image; loaded into kind by start-all.ps1
+#   namenode          (5)   HDFS NameNode — file system index
+#   datanode-1        (5)   HDFS DataNode — block bytes (replica 1)
+#   datanode-2        (5)   HDFS DataNode — block bytes (replica 2)
+#   resourcemanager   (5)   YARN ResourceManager — job scheduler
+#   nodemanager-1     (5)   YARN NodeManager — executor host
+#   nodemanager-2     (5)   YARN NodeManager — executor host
+#
+# ─── USAGE ────────────────────────────────────────────────────────────────────
+#   .\scripts\start-all.ps1             # start everything (idempotent)
+#   .\scripts\phase5-init-hdfs.ps1      # create HDFS dirs (once after first boot)
+#   Open http://localhost:8001          # JupyterHub — alice / sparkmagic
+#   Open http://localhost:8088          # YARN ResourceManager UI
+#   Open http://localhost:9870          # HDFS NameNode UI
+#   Open http://localhost:8998/sessions # Livy active sessions
 
 services:
 
   # ---------------------------------------------------------------------------
-  # Spark standalone cluster
-  # ---------------------------------------------------------------------------
-  spark-master:
-    image: apache/spark:3.5.3
-    container_name: spark-master
-    entrypoint: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master"]
-    environment:
-      SPARK_NO_DAEMONIZE: "true"
-    ports:
-      - "8080:8080"   # Spark Master Web UI
-      - "7077:7077"   # Spark Master RPC
-    networks:
-      - spark-net
-
-  spark-worker:
-    image: apache/spark:3.5.3
-    # container_name: spark-worker
-    # apache/spark:3.5.3 has python3 but not "python"; PySpark executor needs "python"
-    user: root
-    entrypoint: ["/bin/bash", "-c", "ln -sf /usr/bin/python3 /usr/bin/python && exec /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077"]
-    environment:
-      SPARK_NO_DAEMONIZE: "true"
-      SPARK_WORKER_MEMORY: "2G"
-      SPARK_WORKER_CORES: "2"
-    volumes:
-      - hive-warehouse:/opt/hive/data/warehouse  # (phase 3) shared with hive-metastore
-    depends_on:
-      - spark-master
-    networks:
-      - spark-net
-
-  # ---------------------------------------------------------------------------
-  # Apache Livy REST server
+  # Apache Livy — the REST gateway that bridges notebooks to Spark on YARN.
+  #
+  # Role: edge node.  SparkMagic sends HTTP POST /sessions ("start a Spark context")
+  # and POST /statements ("run this code") to Livy.  Livy runs spark-submit inside
+  # its own JVM — that IS the Spark driver.  YARN executors phone back to this
+  # container (spark.driver.host=livy) over TCP.
+  #
+  # Why depends_on namenode (healthy)?  Livy's first YARN job uploads ~220 MB of
+  # Spark JARs to HDFS (spark.yarn.stagingDir).  If the NameNode isn't ready yet,
+  # that upload fails and the job stays in ACCEPTED state forever.
   # ---------------------------------------------------------------------------
   livy:
     build:
@@ -71,28 +68,31 @@ services:
       dockerfile: Dockerfile
     container_name: livy
     environment:
+      # Tells Livy where spark-submit lives so it can launch SparkContext processes.
       - SPARK_HOME=/opt/spark
-      - SPARK_MASTER=spark://spark-master:7077
     volumes:
+      # Livy server settings: session limits, timeouts, YARN master address.
       - ./config/livy/livy.conf:/opt/livy/conf/livy.conf:ro
+      # Sets HADOOP_CONF_DIR so Livy/Spark find core-site.xml, yarn-site.xml, etc.
       - ./config/livy/livy-env.sh:/opt/livy/conf/livy-env.sh:ro
+      # Spark submit defaults: spark.driver.host=livy, stagingDir, executor sizes.
       - ./config/livy/spark-defaults.conf:/opt/livy/conf/spark-defaults.conf:ro
-      # hive-site.xml on the Livy JVM classpath is how Livy detects that HMS is
-      # available and switches from in-memory to hive catalog automatically.
-      # (/opt/livy/conf is on the -cp of the Livy server process)
+      # Puts hive-site.xml on Spark's classpath → SparkSession uses Hive catalog
+      # (catalogImplementation=hive, warehouse dir on HDFS, HMS Thrift URI).
       - ./config/hive/hive-site.xml:/opt/livy/conf/hive-site.xml:ro
-      # (phase 3) Spark driver runs in Livy (client mode), so the driver also
-      # needs access to the warehouse volume for file:/ path resolution during
-      # saveAsTable (overwrite mode checks/deletes the existing path via the
-      # local FS before executors write new data).
-      - hive-warehouse:/opt/hive/data/warehouse
+      # Full Hadoop client config dir — gives Livy/Spark both the NameNode address
+      # (core-site.xml) and the YARN ResourceManager address (yarn-site.xml).
+      - ./config/hadoop:/etc/hadoop/conf:ro
     ports:
-      - "8998:8998"   # Livy REST API
+      - "8998:8998"   # Livy REST API — SparkMagic POSTs here
     depends_on:
-      - spark-master
+      namenode:
+        condition: service_healthy   # HDFS must be up before JAR staging on first job
     networks:
       - spark-net
     healthcheck:
+      # GET /sessions returns {"sessions":[...]} when Livy is ready.  start-all.ps1
+      # waits for this before bootstrapping the K8s control plane.
       test: ["CMD", "curl", "-f", "http://localhost:8998/sessions"]
       interval: 15s
       timeout: 10s
@@ -100,55 +100,272 @@ services:
       start_period: 30s
 
   # ---------------------------------------------------------------------------
-  # Phase 3: Hive Metastore + PostgreSQL backing store
+  # Phase 3: PostgreSQL — the persistent store behind Hive Metastore.
+  #
+  # Role: dumb relational database that holds all Hive DDL: database names,
+  # table names, column types, partition info, and — crucially — the HDFS path
+  # where each table's Parquet files live.  Without this, Spark has no idea
+  # that `SELECT * FROM risk_dw.trades` maps to hdfs://namenode:9000/user/hive/...
   # ---------------------------------------------------------------------------
   postgres:
     image: postgres:16-alpine
     container_name: postgres
     environment:
-      POSTGRES_DB: metastore
-      POSTGRES_USER: hive
-      POSTGRES_PASSWORD: hive
+      POSTGRES_DB: metastore       # database name the HMS JDBC URL points at
+      POSTGRES_USER: hive          # HMS connects as this user
+      POSTGRES_PASSWORD: hive      # change in production (or use a K8s Secret)
+      # Allow any TCP connection without a password — fine for localhost dev.
+      # Writes `host all all all trust` into pg_hba.conf so pgAdmin and psql
+      # work without credential prompts.  Remove in production.
+      POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
+      # Named volume — table metadata survives `docker compose down` but is wiped by `-v`.
       - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"   # pgAdmin / psql desktop access — port 5433 avoids conflict with any local PostgreSQL install
     networks:
       - spark-net
     healthcheck:
+      # pg_isready probes the TCP port; hive-metastore waits for this before starting.
       test: ["CMD", "pg_isready", "-U", "hive", "-d", "metastore"]
       interval: 10s
       timeout: 5s
       retries: 5
 
+  # ---------------------------------------------------------------------------
+  # Phase 3: Hive Metastore (HMS) — the catalog server.
+  #
+  # Role: Thrift RPC server on port 9083.  Clients (Spark, Hive CLI) send DDL
+  # (CREATE TABLE, SHOW DATABASES) and partition discovery requests here.
+  # HMS translates them into SQL on the postgres `metastore` database.
+  #
+  # Why depends_on BOTH postgres AND namenode?
+  #   postgres  — HMS reads its schema at boot; fails fast if PG isn't ready.
+  #   namenode  — Phase 5: hive.metastore.warehouse.dir is an hdfs:// path;
+  #               HMS validates that path exists on startup.  If HDFS isn't up
+  #               yet, HMS throws "Path does not exist" and exits.
+  # ---------------------------------------------------------------------------
   hive-metastore:
     build:
       context: ./docker/hive-metastore
       dockerfile: Dockerfile
     container_name: hive-metastore
     environment:
-      SERVICE_NAME: metastore
-      DB_DRIVER: postgres
+      SERVICE_NAME: metastore   # tells the Hive entrypoint to start the Thrift server
+      DB_DRIVER: postgres       # JDBC driver class (org.postgresql.Driver)
+      # Needed so HMS can resolve hdfs:// warehouse paths via the NameNode.
+      HADOOP_CONF_DIR: /etc/hadoop/conf
     volumes:
+      # hive-site.xml: warehouse dir, HMS Thrift URI, PostgreSQL JDBC URL.
       - ./config/hive/hive-site.xml:/opt/hive/conf/hive-site.xml:ro
-      - hive-warehouse:/opt/hive/data/warehouse
+      # core-site.xml gives HMS the NameNode address for hdfs:// URI resolution.
+      - ./config/hadoop/core-site.xml:/etc/hadoop/conf/core-site.xml:ro
+      # hdfs-site.xml tells the HMS Hadoop client where DataNodes store blocks.
+      - ./config/hadoop/hdfs-site.xml:/etc/hadoop/conf/hdfs-site.xml:ro
     ports:
-      - "9083:9083"   # HMS thrift port (exposed for debugging)
+      - "9083:9083"   # HMS Thrift port — Spark connects here for catalog lookups
     depends_on:
       postgres:
+        condition: service_healthy
+      namenode:
         condition: service_healthy
     networks:
       - spark-net
     healthcheck:
-      # CMD-SHELL runs via /bin/sh; /dev/tcp is bash-only so we invoke bash explicitly
+      # Open a TCP connection to port 9083; success = HMS is accepting Thrift calls.
+      # Uses bash /dev/tcp (not available in /bin/sh, hence explicit bash invocation).
       test: ["CMD", "bash", "-c", "</dev/tcp/localhost/9083"]
       interval: 15s
       timeout: 10s
       retries: 10
       start_period: 60s
 
+  # ---------------------------------------------------------------------------
+  # Phase 5: Hadoop YARN + HDFS
+  # All four daemons are built from the SAME Dockerfile (docker/hadoop/Dockerfile).
+  # HADOOP_ROLE tells entrypoint.sh which daemon to `exec` as PID 1:
+  #   namenode        → exec hdfs namenode
+  #   datanode        → exec hdfs datanode
+  #   resourcemanager → exec yarn resourcemanager
+  #   nodemanager     → exec yarn nodemanager
+  # One daemon per container = clean logs, independent restarts, Docker as supervisor.
+  # Config is bind-mounted from config/hadoop/ — tune without rebuilding.
+  # ---------------------------------------------------------------------------
+
+  namenode:
+    # The HDFS NameNode: the "brain" of the file system.
+    # Knows the full directory tree, which files have which blocks,
+    # and which DataNodes hold each block.  Does NOT store file bytes.
+    # CRITICAL: the namenode-data volume holds the fsimage + edit log.
+    # Losing it = losing the entire HDFS namespace (like wiping a partition table).
+    build:
+      context: ./docker/hadoop
+      dockerfile: Dockerfile
+    container_name: namenode
+    environment:
+      HADOOP_ROLE: namenode          # read by entrypoint.sh to select the daemon
+      HADOOP_CONF_DIR: /etc/hadoop/conf
+    volumes:
+      # Persistent fsimage + edit log — survives compose down, wiped by down -v.
+      - namenode-data:/hadoop/dfs/name
+      - ./config/hadoop/core-site.xml:/etc/hadoop/conf/core-site.xml:ro
+      - ./config/hadoop/hdfs-site.xml:/etc/hadoop/conf/hdfs-site.xml:ro
+      # NameNode doesn't run YARN, but mapred/yarn configs are needed because
+      # `hdfs dfsadmin` and `hdfs dfs` CLI commands merge all four config files.
+      - ./config/hadoop/yarn-site.xml:/etc/hadoop/conf/yarn-site.xml:ro
+      - ./config/hadoop/mapred-site.xml:/etc/hadoop/conf/mapred-site.xml:ro
+    ports:
+      - "9870:9870"   # NameNode Web UI: cluster health, block stats, DataNode list
+      - "9000:9000"   # HDFS RPC: clients (Spark, HMS, hdfs CLI) open files via this port
+    networks:
+      - spark-net
+    healthcheck:
+      # "Safe mode" = NameNode startup phase where it's syncing block reports from
+      # DataNodes.  It accepts no writes until safe mode is OFF.
+      # dfsadmin -safemode get returns 0 (healthy) only when safe mode is OFF.
+      # retries=20 gives 5 minutes for the NameNode to format + leave safe mode.
+      test: ["CMD", "hdfs", "dfsadmin", "-safemode", "get"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+
+  datanode-1:
+    # The HDFS DataNode: the "storage worker".
+    # Stores raw 128 MB block files on disk and serves them to readers.
+    # Sends heartbeats + block reports to the NameNode every 3 seconds.
+    # The NameNode uses block reports to know where every file's blocks live.
+    # Two DataNodes (datanode-1 + datanode-2) enable replication=2: the NameNode
+    # pipelines each block write through both nodes before acknowledging the client.
+    build:
+      context: ./docker/hadoop
+      dockerfile: Dockerfile
+    container_name: datanode-1
+    environment:
+      HADOOP_ROLE: datanode
+      HADOOP_CONF_DIR: /etc/hadoop/conf
+    volumes:
+      # Block storage — each 128 MB chunk of a Parquet file is a blk_XXXXXXXX file here.
+      # Persists across compose down; wiped by compose down -v.
+      - datanode-1-data:/hadoop/dfs/data
+      - ./config/hadoop/core-site.xml:/etc/hadoop/conf/core-site.xml:ro
+      - ./config/hadoop/hdfs-site.xml:/etc/hadoop/conf/hdfs-site.xml:ro
+    depends_on:
+      namenode:
+        condition: service_healthy   # DataNode registers with NameNode on startup
+    networks:
+      - spark-net
+
+  datanode-2:
+    # Second DataNode — holds replica 2 of every block.
+    # Identical configuration to datanode-1; distinguished only by container_name
+    # (Docker DNS) and its own named volume (datanode-2-data).
+    # Stop this container to simulate a DataNode failure: existing blocks remain
+    # readable from datanode-1; new writes fail until restarted.
+    build:
+      context: ./docker/hadoop
+      dockerfile: Dockerfile
+    container_name: datanode-2
+    environment:
+      HADOOP_ROLE: datanode
+      HADOOP_CONF_DIR: /etc/hadoop/conf
+    volumes:
+      - datanode-2-data:/hadoop/dfs/data
+      - ./config/hadoop/core-site.xml:/etc/hadoop/conf/core-site.xml:ro
+      - ./config/hadoop/hdfs-site.xml:/etc/hadoop/conf/hdfs-site.xml:ro
+    depends_on:
+      namenode:
+        condition: service_healthy
+    networks:
+      - spark-net
+
+  resourcemanager:
+    # The YARN ResourceManager: the "job scheduler".
+    # Accepts job submissions, tracks total cluster capacity (RAM + vCores across
+    # all NodeManagers), and decides where to launch each container (executor JVM).
+    # Also serves the Web UI at :8088 — the best place to watch job progress.
+    build:
+      context: ./docker/hadoop
+      dockerfile: Dockerfile
+    container_name: resourcemanager
+    environment:
+      HADOOP_ROLE: resourcemanager
+      HADOOP_CONF_DIR: /etc/hadoop/conf
+    volumes:
+      - ./config/hadoop/core-site.xml:/etc/hadoop/conf/core-site.xml:ro
+      - ./config/hadoop/yarn-site.xml:/etc/hadoop/conf/yarn-site.xml:ro
+      - ./config/hadoop/mapred-site.xml:/etc/hadoop/conf/mapred-site.xml:ro
+      # Queue definitions — tells the CapacityScheduler how to divide cluster resources.
+      # Without this the RM exits immediately: "Queue configuration missing child queue names".
+      - ./config/hadoop/capacity-scheduler.xml:/etc/hadoop/conf/capacity-scheduler.xml:ro
+    ports:
+      - "8088:8088"   # YARN Web UI: active/completed apps, node list, queue usage
+    depends_on:
+      namenode:
+        condition: service_healthy   # RM reads HDFS configs; NameNode must be addressable
+    networks:
+      - spark-net
+    healthcheck:
+      # `yarn node -list` queries the RM's REST API for registered NodeManagers.
+      # Returns exit 0 when at least one NM has registered (even if 0 nodes yet).
+      test: ["CMD", "yarn", "node", "-list"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  nodemanager-1:
+    # The YARN NodeManager: the "executor host".
+    # Registers with the ResourceManager advertising its RAM + vCores.
+    # When the RM assigns a container here, the NM launches a JVM, sets up its
+    # cgroup/namespace, and monitors it.  That JVM is a Spark executor.
+    # STATELESS: no named volume needed — scratch data is ephemeral.
+    build:
+      context: ./docker/hadoop
+      dockerfile: Dockerfile
+    container_name: nodemanager-1
+    environment:
+      HADOOP_ROLE: nodemanager
+      HADOOP_CONF_DIR: /etc/hadoop/conf
+    volumes:
+      - ./config/hadoop/core-site.xml:/etc/hadoop/conf/core-site.xml:ro
+      - ./config/hadoop/yarn-site.xml:/etc/hadoop/conf/yarn-site.xml:ro
+      - ./config/hadoop/mapred-site.xml:/etc/hadoop/conf/mapred-site.xml:ro
+    depends_on:
+      - resourcemanager   # NM registers with RM on startup; RM must be running first
+    networks:
+      - spark-net
+
+  nodemanager-2:
+    # Second NodeManager — doubles YARN executor capacity (4 vCores + 4 GB extra).
+    # Stateless like nodemanager-1; stop it to simulate a node failure and watch
+    # YARN reschedule the in-flight task on nodemanager-1.
+    build:
+      context: ./docker/hadoop
+      dockerfile: Dockerfile
+    container_name: nodemanager-2
+    environment:
+      HADOOP_ROLE: nodemanager
+      HADOOP_CONF_DIR: /etc/hadoop/conf
+    volumes:
+      - ./config/hadoop/core-site.xml:/etc/hadoop/conf/core-site.xml:ro
+      - ./config/hadoop/yarn-site.xml:/etc/hadoop/conf/yarn-site.xml:ro
+      - ./config/hadoop/mapred-site.xml:/etc/hadoop/conf/mapred-site.xml:ro
+    depends_on:
+      - resourcemanager
+    networks:
+      - spark-net
+
 volumes:
-  postgres-data:     # (phase 3) HMS PostgreSQL backing store
-  hive-warehouse:    # (phase 3) Parquet warehouse — shared between hive-metastore, spark-worker, livy
+  postgres-data:   # Phase 3 — HMS table metadata (survives compose down; wipe with -v)
+  namenode-data:   # Phase 5 — HDFS fsimage + edit log (LOSS = TOTAL FS WIPE)
+  datanode-1-data:   # Phase 5 — HDFS block bytes, replica 1 (Parquet files, staged Spark JARs)
+  datanode-2-data:   # Phase 5 — HDFS block bytes, replica 2 (mirrors datanode-1-data contents)
 
 networks:
+  # Single flat bridge network — all containers resolve each other by container_name
+  # (namenode, livy, hive-metastore, etc.) via Docker's embedded DNS.
+  # In production each tier (storage, compute, control) would have its own network
+  # with explicit firewall rules between them.
   spark-net:
     driver: bridge

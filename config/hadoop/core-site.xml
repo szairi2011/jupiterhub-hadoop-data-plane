@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
+  core-site.xml — Hadoop "global" settings shared by EVERY daemon and client.
+  Mounted read-only into ALL containers: namenode, datanode, resourcemanager,
+  nodemanager, livy, hive-metastore.
+
+  Rule of thumb: if a setting affects how the whole cluster identifies itself or
+  how clients find it, it belongs here.  HDFS-only settings go in hdfs-site.xml,
+  YARN-only settings go in yarn-site.xml.
+
+  Phase 6 changes:
+    hadoop.security.authentication  → kerberos
+    hadoop.security.authorization   → true
+    hadoop.proxyuser.root.*         → locked down to specific hosts/groups
+-->
+<configuration>
+
+  <!-- THE single most important property in the whole cluster.
+       Every hdfs:// URL — in Spark configs, Hive warehouse paths, HDFS CLI commands —
+       resolves relative to this NameNode address.
+       "namenode" is resolved by Docker's internal DNS because container_name=namenode
+       in docker-compose.yml.  Change this and the entire cluster stops seeing HDFS. -->
+  <property>
+    <name>fs.defaultFS</name>
+    <value>hdfs://namenode:9000</value>
+  </property>
+
+  <!-- "simple" = trust the OS username, no ticket required.
+       Anyone who can reach the NameNode port is authenticated as their Unix user.
+       Phase 6 flips this to "kerberos" — every daemon and client must then
+       present a valid Kerberos ticket before any IPC call is accepted. -->
+  <property>
+    <name>hadoop.security.authentication</name>
+    <value>simple</value>
+  </property>
+
+  <!-- Service-level ACLs: when false, any authenticated user may call any daemon RPC
+       (e.g., hdfs dfsadmin, yarn rmadmin).  Set to true in Phase 6 to restrict
+       which users/groups can perform administrative operations. -->
+  <property>
+    <name>hadoop.security.authorization</name>
+    <value>false</value>
+  </property>
+
+  <!-- Livy runs as "root" inside its container but submits Spark jobs on behalf
+       of alice / bob / carol.  These proxyuser settings say:
+         "the root user is trusted to impersonate any user from any host".
+       Without this, YARN throws: "User root is not allowed to impersonate alice".
+       Phase 6 will narrow hosts to the Livy container IP and groups to data-team. -->
+  <property>
+    <name>hadoop.proxyuser.root.hosts</name>
+    <value>*</value>
+  </property>
+  <property>
+    <name>hadoop.proxyuser.root.groups</name>
+    <value>*</value>
+  </property>
+
+</configuration>

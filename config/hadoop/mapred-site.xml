@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
+  mapred-site.xml — MapReduce framework wiring (Phase 5).
+  Mounted into: resourcemanager, nodemanager, livy.
+
+  "Why do we need MapReduce config if we're only running Spark?"
+  ──────────────────────────────────────────────────────────────
+  YARN was originally built as the resource layer for MapReduce (Hadoop 1's
+  processing engine).  Even though we never run any Map or Reduce tasks here,
+  YARN's ResourceManager still reads mapred-site.xml to learn:
+    1. Which framework to use for the ApplicationMaster (AM) — the thin
+       coordinator JVM YARN launches per job before starting any executors.
+    2. Where to find the MapReduce JARs so the NodeManager can launch that AM.
+
+  Without mapreduce.framework.name=yarn, the Spark ApplicationMaster fails to
+  start and you see: "FileSystem hdfs:// not supported in local mode".
+
+  Spark itself is NOT MapReduce.  It just reuses YARN's container scheduling.  No
+  Map tasks, no Reduce tasks, no HDFS intermediate output — only Spark RDD stages.
+-->
+<configuration>
+
+  <!-- Tells YARN: "use YARN containers for the ApplicationMaster, not local mode".
+       This single property is the bridge between MapReduce config and YARN execution.
+       Set to "local" and every job would run in a single JVM on the submitting machine. -->
+  <property>
+    <name>mapreduce.framework.name</name>
+    <value>yarn</value>
+  </property>
+
+  <!-- Classpath for the ApplicationMaster JVM that YARN launches per Spark job.
+       Points at the MR JARs bundled with Hadoop so the AM class can be found
+       at runtime by the NodeManager.  Without this, `java.lang.ClassNotFoundException`
+       on the AM main class and the job never progresses past ACCEPTED state. -->
+  <property>
+    <name>mapreduce.application.classpath</name>
+    <value>
+      $HADOOP_MAPRED_HOME/share/hadoop/mapreduce/*,
+      $HADOOP_MAPRED_HOME/share/hadoop/mapreduce/lib/*
+    </value>
+  </property>
+
+</configuration>

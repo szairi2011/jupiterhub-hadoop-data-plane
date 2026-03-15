@@ -32,6 +32,7 @@
   "pyspark_dataframe_encoding": "utf-8",
   "heartbeat_timeout": 60,
   "livy_session_waiting_timeout": 120,
+  "livy_session_startup_timeout_seconds": 300,
   "livy_server_heartbeat_timeout": 0,
   "cleanup_all_sessions_on_exit": true,
   "shutdown_session_on_spark_statement_errors": false,

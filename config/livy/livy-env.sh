@@ -8,9 +8,9 @@ export SPARK_HOME=/opt/spark
 # JAVA_HOME is set by the apache/spark base image â€” no override needed
 # export JAVA_HOME=/usr/local/openjdk-11
 
-# Phase 6 (YARN): point to the cluster's Hadoop XML files so Livy can reach YARN/HDFS
-# export HADOOP_CONF_DIR=/etc/hadoop/conf
-export HADOOP_CONF_DIR=
+# Phase 5: point to the mounted Hadoop XML files so Livy/Spark can reach YARN + HDFS.
+# The config/hadoop/ directory is mounted to /etc/hadoop/conf in docker-compose.yml.
+export HADOOP_CONF_DIR=/etc/hadoop/conf
 
 # Phase 3: Point Spark to the Livy conf dir so spark-defaults.conf is picked up.
 # spark.sql.catalogImplementation is a static SQL conf â€” it MUST be in
